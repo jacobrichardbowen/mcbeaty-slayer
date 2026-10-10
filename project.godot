@@ -1,0 +1,9 @@
+; Engine configuration file.
+; Godot 4.x project. Edit with the Godot editor, not by hand.
+config_version=5
+
+[application]
+
+config/name="Mcbeaty Slayer"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
