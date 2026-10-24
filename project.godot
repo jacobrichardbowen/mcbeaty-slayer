@@ -5,5 +5,30 @@ config_version=5
 [application]
 
 config/name="Mcbeaty Slayer"
+config/description="Tower of Power on Ascension: a Halo 2-feel prototype (Whites vs Reds)."
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.3", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[layer_names]
+
+3d_physics/layer_1="world"
+3d_physics/layer_2="soldiers"
+3d_physics/layer_3="pickups"
+3d_physics/layer_4="moving"
+
+[physics]
+
+common/physics_ticks_per_second=120
+common/max_physics_steps_per_frame=12
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2
+lights_and_shadows/directional_shadow/size=4096

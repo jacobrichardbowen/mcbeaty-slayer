@@ -1,0 +1,109 @@
+class_name GameConfig
+extends RefCounted
+## Every tuning number for the Tower of Power prototype lives here.
+## Units are meters, seconds and degrees. The values aim for the feel of
+## Halo 2 multiplayer with shields off: fast strafing, floaty jumps, one-hit
+## melee, and a shotgun that kills in one blast up close.
+
+# --- Teams -------------------------------------------------------------------
+const TEAM_WHITE := 0
+const TEAM_RED := 1
+const TEAM_NAMES := ["Whites", "Reds"]
+const TEAM_COLORS := [Color(0.94, 0.94, 0.9), Color(0.92, 0.2, 0.15)]
+const WHITE_NAMES := ["Kolchak", "Denikin", "Wrangel", "Yudenich", "Kornilov", "Kappel", "Alekseev"]
+const RED_NAMES := ["Chapaev", "Budyonny", "Frunze", "Kotovsky", "Voroshilov", "Blyukher", "Shchors", "Tukhachevsky"]
+
+# --- Physics layers ----------------------------------------------------------
+const LAYER_WORLD := 1
+const LAYER_SOLDIER := 2
+const LAYER_PICKUP := 4
+const LAYER_MOVING := 8
+const MASK_SHOT := LAYER_WORLD | LAYER_SOLDIER | LAYER_MOVING
+const MASK_SIGHT := LAYER_WORLD | LAYER_MOVING
+
+# --- Soldier (no shields: health is all you get) -----------------------------
+const MAX_HEALTH := 100.0
+const HEALTH_REGEN_DELAY := 6.0
+const HEALTH_REGEN_RATE := 25.0
+const STAND_HEIGHT := 1.9
+const CROUCH_HEIGHT := 1.3
+const STAND_EYE := 1.72
+const CROUCH_EYE := 1.12
+const RADIUS := 0.38
+const RUN_SPEED := 6.2
+const CROUCH_SPEED := 3.0
+const GROUND_ACCEL := 70.0
+const GROUND_DECEL := 55.0
+const AIR_ACCEL := 22.0
+const GRAVITY := 15.3
+const JUMP_VELOCITY := 6.45  # ~1.35 m jump, ~0.42 s to apex
+const FALL_DAMAGE_MIN_SPEED := 18.0  # ~10.5 m drop
+const FALL_DAMAGE_LETHAL_SPEED := 28.0  # ~25 m drop
+const KILL_Y := -40.0
+const RESPAWN_TIME := 5.0
+
+# --- Melee: with shields off a Halo 2 melee is a kill --------------------------
+const MELEE_DAMAGE := 200.0
+const MELEE_RANGE := 1.9
+const MELEE_LUNGE_RANGE := 3.6
+const MELEE_LUNGE_CONE := 22.0
+const MELEE_LUNGE_SPEED := 15.0
+const MELEE_COOLDOWN := 0.85
+
+# --- Shotgun (M90-ish: 12 shells, 15 pellets, shell-by-shell reload) ----------
+const SG_MAG := 12
+const SG_START_RESERVE := 36
+const SG_MAX_RESERVE := 48
+const SG_PELLETS := 15
+const SG_SPREAD := 4.2  # cone half-angle
+const SG_PELLET_DAMAGE := 12.0
+const SG_FALLOFF_START := 6.0
+const SG_FALLOFF_END := 22.0
+const SG_FALLOFF_MIN := 0.25
+const SG_RANGE := 40.0
+const SG_FIRE_INTERVAL := 0.9
+const SG_RELOAD_START := 0.35
+const SG_RELOAD_SHELL := 0.42
+const SG_RELOAD_END := 0.38
+const SG_AUTOAIM_RANGE := 10.0  # red reticle distance
+
+# --- Maxim gun on the Big Tower ----------------------------------------------
+const MG_FIRE_INTERVAL := 0.1  # 600 rounds per minute
+const MG_DAMAGE := 24.0
+const MG_SPREAD := 0.7
+const MG_RANGE := 160.0
+const MG_YAW_LIMIT := 72.0
+const MG_PITCH_MIN := -55.0
+const MG_PITCH_MAX := 22.0
+const MG_TURN_RATE := 200.0
+const MG_MOUNT_HOLD := 0.25
+const MG_MOUNT_RANGE := 2.2
+const MG_AUTOAIM_RANGE := 90.0
+
+# --- Match ---------------------------------------------------------------------
+const TIME_LIMIT := 15.0 * 60.0
+const MULTIKILL_WINDOW := 4.5
+const FRIENDLY_FIRE := true
+
+# --- Bots ----------------------------------------------------------------------
+const BOT_REACTION := 0.35
+const BOT_AIM_ERROR := 5.0
+const BOT_TURN_RATE := 300.0
+const BOT_VIEW_RANGE := 70.0
+const BOT_TURRET_REACTION := 0.6
+const BOT_TURRET_AIM_ERROR := 2.4
+
+# --- Player-adjustable settings (main menu / pause menu) ------------------------
+static var mouse_sensitivity := 0.11  # degrees per pixel
+static var pad_look_speed := 150.0  # degrees per second at full stick
+static var invert_y := false
+static var fov := 70.0  # Halo 2's horizontal FOV at 4:3
+static var red_bots := 4
+static var white_bots := 0
+static var player_starts_at_tower := true
+static var score_limit := 50
+
+
+## Vertical FOV for Godot's camera from a "Halo style" 4:3 horizontal FOV.
+static func vertical_fov() -> float:
+	return rad_to_deg(2.0 * atan(tan(deg_to_rad(fov) * 0.5) * 0.75))
