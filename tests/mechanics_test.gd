@@ -1,9 +1,12 @@
 extends SceneTree
 ## Checks the core Tower of Power numbers in a live world (no bots):
-## shotgun range, melee, fall damage, jump height, turret arc and lethality.
-## Run: godot --headless --path . --fixed-fps 120 -s tests/mechanics_test.gd
+## shotgun range, melee, fall damage, jump height, turret arc and lethality,
+## and the bunker-control rules that decide where each team spawns.
+## Run: godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 
 var game: Game
+var TPS := Engine.physics_ticks_per_second
+const DECK_Y_TEST := 14.0
 var _failures: Array[String] = []
 var _step := 0
 var _frames := 0
@@ -146,9 +149,11 @@ func _physics_process(_delta: float) -> bool:
 				p.look_yaw = atan2(-(d.chest_position() - game.turret.pivot_position()).x, -(d.chest_position() - game.turret.pivot_position()).z)
 				p.look_pitch = asin((d.chest_position() - game.turret.pivot_position()).normalized().y)
 				p.in_fire = d.alive
+				if not d.alive:
+					_data["mg_kill"] = true
 			elif _frames == 420:
 				p.in_fire = false
-				_expect(not d.alive, "Maxim kills a target on the island (~31 m)")
+				_expect(_data.get("mg_kill", false), "Maxim kills a target on the island (~31 m)")
 				_next()
 		10:  # Turret arc: the covered west path and the tower flanks are out of reach.
 			var t := game.turret
@@ -166,9 +171,76 @@ func _physics_process(_delta: float) -> bool:
 				p.in_action = false
 				_expect(p.turret == null, "holding action again dismounts")
 				_next()
-		12:
+		12:  # Bunker: an uncontested Red inside the tower takes it after the capture time.
+			var b := game.bunker
+			if _frames == 1:
+				b.holder = GameConfig.TEAM_WHITE
+				b.progress = 0.0
+				b.challenger = -1
+				_place(d, Vector3(0, 0, -44))
+				_place(p, Vector3(0, 0, 18))
+			elif _frames == TPS * 3:
+				_expect(b.holder == GameConfig.TEAM_WHITE and b.challenger == GameConfig.TEAM_RED and b.progress > 0.3,
+					"bunker capture builds up but takes time (%.0f%% after 3 s)" % (b.progress * 100.0))
+			elif _frames == int(TPS * (BunkerControl.CAPTURE_TIME + 0.5)):
+				_expect(b.holder == GameConfig.TEAM_RED, "uncontested Red takes the bunker")
+				_next()
+		13:  # Contested: one White can't take it from one Red inside.
+			if _frames == 1:
+				_place(p, Vector3(2, 0, -42))
+			elif _frames == TPS * 8:
+				_expect(game.bunker.holder == GameConfig.TEAM_RED, "an evenly contested bunker stays with the holder")
+				_next()
+		14:  # Red drops to the ground floor, White climbs to the deck (counts
+			# double): outnumbered 2 to 1, the Reds lose it.
+			if _frames == 1:
+				_place(p, Vector3(4, DECK_Y_TEST, -47))
+			elif _frames == int(TPS * (BunkerControl.CAPTURE_TIME + 0.5)):
+				_expect(game.bunker.holder == GameConfig.TEAM_WHITE, "outnumbering the holders inside takes the bunker")
+				_next()
+		15:  # Hand it back to the Reds, then a lone White retakes it once they leave.
+			if _frames == 1:
+				game.bunker.holder = GameConfig.TEAM_RED
+				_place(p, Vector3(2, 0, -42))
+				_place(d, Vector3(0, 0, 18))
+			elif _frames == int(TPS * (BunkerControl.CAPTURE_TIME + 0.5)):
+				_expect(game.bunker.holder == GameConfig.TEAM_WHITE, "White retakes an empty-of-Reds bunker")
+				_next()
+		16:  # Manning the gun flips it immediately, even with Whites inside.
+			if _frames == 1:
+				_place(d, game.turret.seat_position() + Vector3(0, 0, -0.3))
+			elif _frames == 3:
+				game.turret.mount(d)
+			elif _frames == 5:
+				_expect(game.bunker.holder == GameConfig.TEAM_RED, "manning the Maxim takes the bunker at once")
+				_next()
+		17:  # Gun empty and bunker empty: the last team on the gun keeps it.
+			if _frames == 1:
+				game.turret.dismount()
+				_place(d, Vector3(-10, 0, 18))
+				_place(p, Vector3(10, 0, 18))
+			elif _frames == TPS * 10:
+				_expect(game.bunker.holder == GameConfig.TEAM_RED, "an empty bunker stays with the last gun team")
+				_next()
+		18:  # Respawns follow the holder: Reds at the bunker, Whites far away.
+			if _frames == 1:
+				p.die(null, "test")
+				d.die(null, "test")
+			elif _frames == int(TPS * (GameConfig.RESPAWN_TIME + 0.5)):
+				_expect(p.alive and _near_spawn(p, "far"), "Whites respawn on the far side (%s)" % p.global_position)
+				_expect(d.alive and _near_spawn(d, "bunker"), "Reds respawn at the bunker (%s)" % d.global_position)
+				_next()
+		19:
 			print("MECHANICS TEST ", "PASSED" if _failures.is_empty() else "FAILED")
 			quit(0 if _failures.is_empty() else 1)
+			return true
+	return false
+
+
+func _near_spawn(s: Soldier, side: String) -> bool:
+	for xf in game.level.spawn_points[side]:
+		var o: Vector3 = (xf as Transform3D).origin
+		if Vector2(o.x - s.global_position.x, o.z - s.global_position.z).length() < 1.0:
 			return true
 	return false
 

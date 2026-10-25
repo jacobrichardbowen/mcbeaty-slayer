@@ -18,36 +18,23 @@ Maxim M1910 on a wheeled Sokolov mount. All models are crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Each build is one download, and nothing gets
-installed:
-
-- **Windows**: `McbeatySlayer.exe`. Double-click it. The whole game is packed
-  inside that one file.
-- **Mac**: `McbeatySlayer-Mac.zip`. Double-click to unzip, then double-click
-  **Mcbeaty Slayer**. It runs on both Apple Silicon and Intel Macs.
+You don't need Godot to play. Download `McbeatySlayer.exe` and double-click
+it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
 to play. F11 switches between fullscreen and a window. Esc pauses and has
 **Quit game**.
 
-**The first launch asks for approval once**, because the builds aren't signed
-with a paid developer certificate:
-
-- **Windows** shows "Windows protected your PC": click **More info**, then
-  **Run anyway**.
-- **Mac** says Apple can't verify the app:
-  - On macOS 15 (Sequoia) or newer, open **System Settings → Privacy &
-    Security**, scroll down, click **Open Anyway** next to *Mcbeaty Slayer*,
-    and confirm.
-  - On older macOS, Control-click the app, choose **Open**, then **Open**
-    again.
-
-After that it opens with a normal double-click.
+**The first launch asks for approval once**, because the build isn't signed
+with a paid code-signing certificate. Windows shows "Windows protected your
+PC": click **More info**, then **Run anyway**. After that it opens with a
+normal double-click.
 
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-all three builds (Windows, Mac, Linux) into `build/`.
+the Windows build into `build/`. The Mac and Linux presets are still there:
+`tools/build.sh Windows macOS Linux` builds all three.
 
 ### Running from the editor
 
@@ -57,9 +44,8 @@ runs it, and `godot --path . -- --autostart` skips the lobby.
 
 ### Lobby options
 
-- **Whites (you) start**: at the tower (defend the Maxim) or on the far side
-  (storm it).
-- **Red bots** (1–8) and **White bots** (allies, 0–7).
+- **Bunker starts with**: your team (defend it) or the Reds (storm it).
+- **Red bots** (1–16) and **White bots** (your side, 0–15): up to 16 a side.
 - **Score limit**: the 2004 variant used 250. The default here is 50.
 - Mouse sensitivity, field of view (Halo 2's is 70° horizontal at 4:3), and
   invert look.
@@ -100,6 +86,24 @@ turret placed in one of the towers.
 Every number is in [`scripts/core/game_config.gd`](scripts/core/game_config.gd)
 if you want to tune the feel.
 
+### The bunker decides where you spawn
+
+The team holding the **gun bunker** (the Big Tower) spawns around it. The
+other team spawns on the far side of the map: the south edge of the island,
+the Sniper Roost and the Landing Pad. Who holds it, checked every moment:
+
+1. **Whoever is manning the Maxim** holds the bunker, at once.
+2. **Gun empty**: if one team outnumbers the holders *inside* the tower (its
+   stairwell and deck, with the deck counting double), it takes the bunker
+   over 6 seconds. A bigger margin captures faster, up to twice as fast.
+3. If the holders match or outnumber them inside, the capture drains away.
+4. **Gun empty and tower empty**: the last holder keeps it, so the last team
+   to man the gun keeps spawning there.
+
+The bunker spawns sit outside the tower, so holders have to come back in to
+defend it. The top of the screen shows who holds the bunker, whether the gun
+is manned, and a bar while someone is taking it over.
+
 ## The map
 
 The Ascension here is a **hand-built blockout**. I couldn't download the
@@ -130,16 +134,19 @@ colliders, spawn points, routes and the turret transform the way
 
 ## Bots
 
-The bots are deliberately rudimentary. They shoot or punch any enemy they see
-up close, then go for the Maxim:
+The bots are deliberately rudimentary. They fight enemies within about 16 m
+and otherwise work the objective:
 
-- If nobody holds the gun, they run to it and man it.
-- If the enemy holds it, they storm the tower along the west, east or centre
-  route.
-- If their own team holds it, they guard the tower.
+- **Gun empty**: the two teammates nearest the seat race to man it.
+- **Attacking**: they take the west, east or centre route and regroup in
+  fours at the end of it before storming the tower.
+- **Holding the bunker**: a third of the team guards the tower; the rest hunt
+  on the island.
 
 On the gun they sweep its arc, fire in bursts, and hop off when someone flanks
-them.
+them. Left to themselves at 8 or 16 a side, the holders usually keep the
+bunker once they've dug in. That fits Tower of Power's reputation, but it means
+taking the gun yourself is the surest way to flip it.
 
 ## Tests
 
@@ -147,14 +154,16 @@ Headless checks, run from the project folder (they need the class cache, so
 run `godot --headless --path . --import` once first):
 
 ```
-# Weapons, melee, jump height, fall damage, and the turret's arc and lethality
-godot --headless --path . --fixed-fps 120 -s tests/mechanics_test.gd
+# Weapons, melee, jump height, fall damage, the turret's arc and lethality,
+# and every bunker-control and spawn rule
+godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 
-# A 150 s bot match: navmesh connectivity, a bot mans the Maxim, kills happen
-godot --headless --path . --fixed-fps 120 -s tests/smoke_test.gd -- reds=4 whites=0
+# A 300 s bot match: navmesh connectivity, a bot mans the Maxim, kills happen,
+# and every respawn lands on the side its team is entitled to
+godot --headless --path . --fixed-fps 60 -s tests/smoke_test.gd -- reds=16 whites=15
 
 # Screenshots (needs a display; works under xvfb-run)
-godot --path . --rendering-method gl_compatibility --resolution 1280x720 -s tests/screenshots.gd -- /tmp/shots
+godot --path . --resolution 1280x720 -s tests/screenshots.gd -- /tmp/shots
 ```
 
 ## Code layout
@@ -163,6 +172,7 @@ godot --path . --rendering-method gl_compatibility --resolution 1280x720 -s test
 scripts/
   main.gd                   lobby <-> match flow
   core/game.gd              one match: world, spawning, scoring, medals
+  core/bunker_control.gd    who holds the gun bunker (and so where each team spawns)
   core/game_config.gd       all tuning numbers + lobby settings
   core/input_setup.gd       keyboard/mouse/gamepad bindings
   level/ascension.gd        the Ascension blockout, spawns, routes, navmesh

@@ -27,11 +27,19 @@ const DISH_R := 13.0
 const DISH_DEPTH := 3.2
 const SPIN_SPEED := 0.14  # rad/s, one turn every ~45 s
 const DECK_Y := 14.0
+const TOWER_CENTER := Vector3(0, 0, -44)
 
-var spawn_points := {"north": [], "south": []}
+## "bunker": around the Big Tower, used by whoever holds it. "far": the south
+## half of the map, used by the other team. 16 each, one per soldier.
+var spawn_points := {"bunker": [], "far": []}
 var turret_transform := Transform3D(Basis(Vector3.UP, PI), Vector3(0, DECK_Y, -34.3))
 var routes := {}
+var route_rally := {}
 var defend_points: Array[Vector3] = []
+## Inside the Big Tower (the capture zone): where attackers go to take it.
+var capture_points: Array[Vector3] = []
+## Out on the island and side paths, where hunters go looking for a fight.
+var hunt_points: Array[Vector3] = []
 var ammo_points: Array[Vector3] = []
 var teleporters: Array[Dictionary] = []
 var nav_region: NavigationRegion3D
@@ -532,22 +540,42 @@ func _build_backdrop() -> void:
 # --- Gameplay points ------------------------------------------------------------------------
 
 func _define_gameplay_points() -> void:
-	var north: Array = spawn_points["north"]
-	var south: Array = spawn_points["south"]
-	for p in [Vector3(-11, 0, -56), Vector3(11, 0, -56), Vector3(0, 0, -57.5), Vector3(-15, 0, -46),
-			Vector3(15, 0, -46), Vector3(0, 0, -43.5), Vector3(-4, DECK_Y, -48.5)]:
-		north.append(_xf(p, PI))
-	for p in [Vector3(2.5, 0, 18.5), Vector3(-10, 0, 19), Vector3(10, 0, 19.5), Vector3(-34, 0, 25.5),
-			Vector3(-30, 0, 31), Vector3(37, 0, 25.5), Vector3(40.5, 0, 33), Vector3(33, 0, 29)]:
-		south.append(_xf(p, 0.0))
+	var bunker: Array = spawn_points["bunker"]
+	var far: Array = spawn_points["far"]
+	# Behind and beside the Big Tower, outside it: the holders have to come
+	# back into the tower to defend it and climb to re-man the gun.
+	for p in [Vector3(-10.5, 0, -54), Vector3(-7, 0, -54), Vector3(-3.5, 0, -54), Vector3(0, 0, -54),
+			Vector3(3.5, 0, -54), Vector3(7, 0, -54), Vector3(10.5, 0, -54), Vector3(-8, 0, -57.5),
+			Vector3(0, 0, -58), Vector3(6, 0, -57.5), Vector3(-12, 0, -50), Vector3(-13, 0, -42),
+			Vector3(12, 0, -50), Vector3(13.5, 0, -40), Vector3(-15.5, 0, -47), Vector3(15.5, 0, -46.5)]:
+		bunker.append(_xf(p, PI))
+	# South edge of the island, the Sniper Roost platform and the Landing Pad.
+	for p in [Vector3(-7, 0, 19), Vector3(2.5, 0, 18.5), Vector3(6, 0, 19.5), Vector3(-10, 0, 16),
+			Vector3(12.5, 0, 15), Vector3(-13, 0, 13), Vector3(-18, 0, 18.5), Vector3(16.5, 0, 16),
+			Vector3(-31, 0, 21.5), Vector3(-31, 0, 26), Vector3(-29, 0, 29.5), Vector3(-34.5, 0, 22),
+			Vector3(34, 0, 28), Vector3(38, 0, 33.5), Vector3(41.5, 0, 27), Vector3(37, 0, 22.5)]:
+		far.append(_xf(p, 0.0))
 	routes = {
 		"west": [Vector3(-26.0, 0, -2.0), Vector3(-30.5, -3, -13), Vector3(-30.5, -3, -28), Vector3(-18, 0, -41), Vector3(-8.2, 0, -49.0)],
 		"east": [Vector3(26.0, 0, -2.5), Vector3(30.5, -3, -13), Vector3(30.5, -3, -28), Vector3(18, 0, -41), Vector3(8.2, 0, -39.1)],
-		"center": [Vector3(0, 0, -19), Vector3(0, 0, -33), Vector3(0, 0, -36.2)],
+		"center": [Vector3(-7, 0, -15.5), Vector3(0, 0, -21), Vector3(0, 0, -33), Vector3(0, 0, -36.2)],
 	}
+	# Where attackers on each route regroup before storming: the far end of
+	# the covered side paths, and behind the sandbags north of the dish.
+	route_rally = {"west": 2, "east": 2, "center": 0}
+	# Guard posts: mostly around the tower rather than piled inside it.
 	defend_points.assign([
-		Vector3(-5, DECK_Y, -47), Vector3(5, DECK_Y, -47), Vector3(-6, DECK_Y, -36.5), Vector3(6, DECK_Y, -36.5),
-		Vector3(0, 0, -44), Vector3(-9, 0, -49), Vector3(9, 0, -39), Vector3(-12, 0, -40), Vector3(12, 0, -40),
+		Vector3(-5, DECK_Y, -47), Vector3(6, DECK_Y, -36.5), Vector3(0, 0, -44),
+		Vector3(-9, 0, -49), Vector3(9, 0, -39), Vector3(-12, 0, -40), Vector3(12, 0, -40),
+		Vector3(-10, 0, -56), Vector3(10, 0, -56), Vector3(-4, 0, -33.5), Vector3(4, 0, -33.5),
+	])
+	capture_points.assign([
+		Vector3(0, 0, -44), Vector3(-1.5, 0, -42), Vector3(-4.9, 3.5, -48.9), Vector3(4.9, 7.0, -48.9),
+		Vector3(4.9, 10.5, -39.1), Vector3(-5, DECK_Y, -47), Vector3(5, DECK_Y, -47), Vector3(-6, DECK_Y, -36.5),
+	])
+	hunt_points.assign([
+		Vector3(0, 0, -16), Vector3(-15, 0, -8), Vector3(15, 0, -9), Vector3(-17, 0, 6), Vector3(9, 0, 13),
+		Vector3(-5, 0, 18), Vector3(18.5, 0, 3), Vector3(-30.5, -3, -20), Vector3(30.5, -3, -20), Vector3(-26, 0, 20),
 	])
 	ammo_points.assign([
 		Vector3(0, 0, -42.5), Vector3(18.5, 0, 3.0), Vector3(-31, 0, 27), Vector3(40.5, 0, 28),

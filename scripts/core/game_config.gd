@@ -10,8 +10,11 @@ const TEAM_WHITE := 0
 const TEAM_RED := 1
 const TEAM_NAMES := ["Whites", "Reds"]
 const TEAM_COLORS := [Color(0.94, 0.94, 0.9), Color(0.92, 0.2, 0.15)]
-const WHITE_NAMES := ["Kolchak", "Denikin", "Wrangel", "Yudenich", "Kornilov", "Kappel", "Alekseev"]
-const RED_NAMES := ["Chapaev", "Budyonny", "Frunze", "Kotovsky", "Voroshilov", "Blyukher", "Shchors", "Tukhachevsky"]
+const MAX_PER_TEAM := 16
+const WHITE_NAMES := ["Kolchak", "Denikin", "Wrangel", "Yudenich", "Kornilov", "Kappel", "Alekseev", "Krasnov",
+	"Semyonov", "Markov", "Drozdovsky", "Kutepov", "Shkuro", "Mamontov", "Dutov", "Pepelyayev"]
+const RED_NAMES := ["Chapaev", "Budyonny", "Frunze", "Kotovsky", "Voroshilov", "Blyukher", "Shchors", "Tukhachevsky",
+	"Yegorov", "Uborevich", "Yakir", "Dybenko", "Primakov", "Mironov", "Kork", "Vatsetis"]
 
 # --- Physics layers ----------------------------------------------------------
 const LAYER_WORLD := 1
@@ -89,7 +92,10 @@ const FRIENDLY_FIRE := true
 const BOT_REACTION := 0.35
 const BOT_AIM_ERROR := 5.0
 const BOT_TURN_RATE := 300.0
-const BOT_VIEW_RANGE := 70.0
+const BOT_VIEW_RANGE := 70.0  # on the Maxim
+const BOT_ENGAGE_RANGE := 16.0  # on foot; farther enemies are left alone
+const BOT_RALLY_SIZE := 4  # attackers regroup into groups this big before storming
+const BOT_RALLY_MAX_WAIT := 12.0
 const BOT_TURRET_REACTION := 0.6
 const BOT_TURRET_AIM_ERROR := 2.4
 

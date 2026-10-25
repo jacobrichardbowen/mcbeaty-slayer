@@ -218,35 +218,46 @@ func _draw_feed(sz: Vector2) -> void:
 
 
 func _draw_status(sz: Vector2) -> void:
-	var g := game.turret.gunner
-	var text := "THE MAXIM IS UNMANNED"
+	var b := game.bunker
+	var text := "BUNKER: NOBODY"
 	var col := DIM
-	if g:
-		text = "THE MAXIM: %s" % GameConfig.TEAM_NAMES[g.team].to_upper()
-		col = GameConfig.TEAM_COLORS[g.team]
+	if b.holder >= 0:
+		text = "BUNKER: %s" % GameConfig.TEAM_NAMES[b.holder].to_upper()
+		col = GameConfig.TEAM_COLORS[b.holder]
+	text += "   ·   MAXIM MANNED" if game.turret.gunner else "   ·   MAXIM EMPTY"
 	_text(Vector2(0, 32), text, 16, col, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
+	if b.challenger >= 0 and b.progress > 0.0:
+		var cc: Color = GameConfig.TEAM_COLORS[b.challenger]
+		var r := Rect2((sz.x - 240.0) * 0.5, 44.0, 240.0, 8.0)
+		_canvas.draw_rect(r, DIM, false, 1.0)
+		_canvas.draw_rect(Rect2(r.position, Vector2(r.size.x * b.progress, r.size.y)), cc)
+		_text(Vector2(0, 72), "%s TAKING THE BUNKER" % GameConfig.TEAM_NAMES[b.challenger].to_upper(), 13, cc, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
 
 
+## Two columns, your team on the left; fits 16 a side.
 func _draw_scoreboard(sz: Vector2, p: Soldier) -> void:
-	var w := 520.0
-	var rows := game.soldiers.size() + 3
-	var h := 40.0 + rows * 26.0
-	var pos := Vector2((sz.x - w) * 0.5, sz.y * 0.32)
-	_canvas.draw_rect(Rect2(pos, Vector2(w, h)), Color(0.02, 0.06, 0.1, 0.8))
-	_canvas.draw_rect(Rect2(pos, Vector2(w, h)), DIM, false, 1.0)
-	var y := pos.y + 30.0
-	_text(Vector2(pos.x + 16, y), "NAME", 14, DIM)
-	_text(Vector2(pos.x + 300, y), "KILLS", 14, DIM)
-	_text(Vector2(pos.x + 400, y), "DEATHS", 14, DIM)
-	for t in [p.team, 1 - p.team]:
-		y += 28.0
+	var col_w := 330.0
+	var gap := 20.0
+	var row_h := 22.0
+	var h := 70.0 + GameConfig.MAX_PER_TEAM * row_h
+	var pos := Vector2((sz.x - col_w * 2.0 - gap) * 0.5, maxf(90.0, (sz.y - h) * 0.5))
+	for i in 2:
+		var t: int = [p.team, 1 - p.team][i]
 		var tc: Color = GameConfig.TEAM_COLORS[t]
-		_text(Vector2(pos.x + 16, y), "%s  %d" % [GameConfig.TEAM_NAMES[t], game.scores[t]], 18, tc)
+		var o := pos + Vector2(i * (col_w + gap), 0)
+		_canvas.draw_rect(Rect2(o, Vector2(col_w, h)), Color(0.02, 0.06, 0.1, 0.82))
+		_canvas.draw_rect(Rect2(o, Vector2(col_w, h)), Color(tc.r, tc.g, tc.b, 0.6), false, 1.0)
+		_text(o + Vector2(14, 28), GameConfig.TEAM_NAMES[t], 20, tc)
+		_text(o + Vector2(0, 28), str(game.scores[t]), 20, tc, HORIZONTAL_ALIGNMENT_RIGHT, col_w - 14.0)
+		_text(o + Vector2(14, 52), "NAME", 12, DIM)
+		_text(o + Vector2(220, 52), "KILLS", 12, DIM)
+		_text(o + Vector2(272, 52), "DEATHS", 12, DIM)
 		var team_list := game.soldiers.filter(func(s: Soldier) -> bool: return s.team == t)
 		team_list.sort_custom(func(a: Soldier, b: Soldier) -> bool: return a.kills > b.kills)
+		var y := o.y + 74.0
 		for s in team_list:
-			y += 24.0
-			var sc := Color.WHITE if s == p else Color(0.85, 0.85, 0.85)
-			_text(Vector2(pos.x + 36, y), s.display_name, 16, sc)
-			_text(Vector2(pos.x + 300, y), str(s.kills), 16, sc)
-			_text(Vector2(pos.x + 400, y), str(s.deaths), 16, sc)
+			var sc := Color.WHITE if s == p else Color(0.82, 0.82, 0.82, 1.0 if s.alive else 0.55)
+			_text(Vector2(o.x + 14, y), s.display_name, 15, sc)
+			_text(Vector2(o.x + 220, y), str(s.kills), 15, sc)
+			_text(Vector2(o.x + 272, y), str(s.deaths), 15, sc)
+			y += row_h

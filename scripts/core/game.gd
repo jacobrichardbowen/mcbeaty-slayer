@@ -19,7 +19,7 @@ var time := 0.0
 var time_left := GameConfig.TIME_LIMIT
 var over := false
 var winner := -1
-var tower_team := GameConfig.TEAM_WHITE
+var bunker: BunkerControl
 
 var _soldier_root: Node3D
 var _bots: Array[BotBrain] = []
@@ -44,7 +44,10 @@ func start() -> void:
 	turret.transform = level.turret_transform
 	add_child(turret)
 	turret.gunner_changed.connect(_on_gunner_changed)
-	level.set_flag_team(-1)
+	var start_holder := GameConfig.TEAM_WHITE if GameConfig.player_starts_at_tower else GameConfig.TEAM_RED
+	bunker = BunkerControl.new(start_holder)
+	bunker.holder_changed.connect(_on_holder_changed)
+	level.set_flag_team(start_holder)
 	for p in level.ammo_points:
 		_add_pickup(ground_point(p), 12, false)
 	for tp in level.teleporters:
@@ -56,7 +59,6 @@ func start() -> void:
 	_soldier_root = Node3D.new()
 	_soldier_root.name = "Soldiers"
 	add_child(_soldier_root)
-	tower_team = GameConfig.TEAM_WHITE if GameConfig.player_starts_at_tower else GameConfig.TEAM_RED
 	_spawn_soldier(GameConfig.TEAM_WHITE, "You", true)
 	for i in GameConfig.white_bots:
 		_spawn_soldier(GameConfig.TEAM_WHITE, GameConfig.WHITE_NAMES[i % GameConfig.WHITE_NAMES.size()], false)
@@ -71,9 +73,10 @@ func start() -> void:
 	pause_menu.restart_requested.connect(func() -> void: restart_requested.emit())
 	add_child(pause_menu)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	var goal := "Hold the tower" if tower_team == GameConfig.TEAM_WHITE else "Take the tower"
+	var goal := "Hold the bunker" if bunker.holder == player.team else "Take the bunker"
 	hud.announce("Tower of Power")
 	hud.feed("%s. First to %d kills." % [goal, GameConfig.score_limit], GameConfig.TEAM_COLORS[0])
+	hud.feed("Whoever holds the bunker spawns there.", Color(0.8, 0.8, 0.8))
 
 
 func input_blocked() -> bool:
@@ -110,6 +113,7 @@ func _physics_process(delta: float) -> void:
 		return
 	time += delta
 	time_left -= delta
+	bunker.update(delta, soldiers, turret.gunner)
 	for s in _respawn_at.keys():
 		if time >= float(_respawn_at[s]):
 			_respawn_at.erase(s)
@@ -175,7 +179,9 @@ func _spawn_soldier(team: int, soldier_name: String, is_player: bool) -> void:
 		player_ctrl.setup(self, s)
 		add_child(player_ctrl)
 	else:
-		_bots.append(BotBrain.new(s, self))
+		var bot := BotBrain.new(s, self)
+		bot.hunter = _bots.filter(func(b: BotBrain) -> bool: return b.s.team == team).size() % 3 != 0
+		_bots.append(bot)
 	s.respawn(_choose_spawn(team))
 
 
@@ -187,9 +193,10 @@ func _add_pickup(pos: Vector3, amount: int, dropped: bool) -> void:
 	add_child(p)
 
 
-## Halo-ish spawning: your team's side of the map, away from living enemies.
+## The bunker holders spawn at the bunker, everyone else on the far side;
+## within a side, pick a spot away from living enemies.
 func _choose_spawn(team: int) -> Transform3D:
-	var side := "north" if team == tower_team else "south"
+	var side := "bunker" if team == bunker.holder else "far"
 	var pts: Array = level.spawn_points[side]
 	var scored: Array = []
 	for xf in pts:
@@ -266,9 +273,15 @@ func _track_medals(k: Soldier) -> void:
 
 
 func _on_gunner_changed(s: Soldier) -> void:
-	level.set_flag_team(s.team if s else -1)
 	if s:
 		hud.feed("%s manned the Maxim" % s.display_name, GameConfig.TEAM_COLORS[s.team])
+
+
+func _on_holder_changed(team: int, _reason: String) -> void:
+	level.set_flag_team(team)
+	hud.feed("%s took the bunker and now spawn there" % GameConfig.TEAM_NAMES[team], GameConfig.TEAM_COLORS[team])
+	if player:
+		hud.announce("Bunker taken" if team == player.team else "Bunker lost")
 
 
 func _end_match(team: int) -> void:

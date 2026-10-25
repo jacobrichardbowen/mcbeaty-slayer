@@ -1,9 +1,9 @@
 extends SceneTree
 ## Headless smoke test: builds a match full of bots, checks the navmesh links
 ## every spawn to the Maxim, then simulates a few minutes of play.
-## Run: godot --headless --path . --fixed-fps 120 -s tests/smoke_test.gd [-- reds=N whites=N far]
+## Run: godot --headless --path . --fixed-fps 60 -s tests/smoke_test.gd [-- reds=N whites=N far]
 
-const SIM_SECONDS := 150.0
+const SIM_SECONDS := 300.0
 
 var game: Game
 var _t := 0.0
@@ -11,6 +11,11 @@ var _next_report := 0.0
 var _mounts := 0
 var _kills := 0
 var _failures: Array[String] = []
+var _was_alive := {}
+var _spawns := 0
+var _bad_spawns := 0
+var _flips := 0
+var _wall_start := 0
 
 
 func _initialize() -> void:
@@ -33,6 +38,10 @@ func _start() -> void:
 	game = Game.new()
 	root.add_child(game)
 	game.start()
+	_wall_start = Time.get_ticks_msec()
+	game.bunker.holder_changed.connect(func(team: int, reason: String) -> void:
+		_flips += 1
+		print("[%6.1f] bunker -> %s (%s)" % [game.time, GameConfig.TEAM_NAMES[team], reason]))
 	game.turret.gunner_changed.connect(func(s: Soldier) -> void:
 		if s:
 			_mounts += 1
@@ -46,7 +55,7 @@ func _start() -> void:
 func _check_paths() -> void:
 	var map := game.level.nav_region.get_navigation_map()
 	var seat := game.turret.seat_position()
-	for side in ["north", "south"]:
+	for side in ["bunker", "far"]:
 		for xf in game.level.spawn_points[side]:
 			var from := game.ground_point((xf as Transform3D).origin)
 			var path := NavigationServer3D.map_get_path(map, from, seat, true)
@@ -74,6 +83,7 @@ func _physics_process(delta: float) -> bool:
 		for s in game.soldiers:
 			line += " %s(%.0f,%.0f,%.0f)%s" % [s.display_name.substr(0, 4), s.global_position.x, s.global_position.y, s.global_position.z, "" if s.alive else "x"]
 		print(line)
+	_check_respawns()
 	var p := game.player
 	if p.alive and _t > 1.0 and p.global_position.y < -5.0 and not p.is_on_floor():
 		_failures.append("player fell through the world at %s" % p.global_position)
@@ -84,8 +94,29 @@ func _physics_process(delta: float) -> bool:
 	return false
 
 
+## Every respawn must land on the side its team is entitled to right now.
+func _check_respawns() -> void:
+	for s in game.soldiers:
+		var was: bool = _was_alive.get(s, true)
+		if s.alive and not was and _t > 1.0:
+			_spawns += 1
+			var side := "bunker" if s.team == game.bunker.holder else "far"
+			var ok := false
+			for xf in game.level.spawn_points[side]:
+				var o: Vector3 = (xf as Transform3D).origin
+				ok = ok or Vector2(o.x - s.global_position.x, o.z - s.global_position.z).length() < 1.0
+			if not ok:
+				_bad_spawns += 1
+				print("[%6.1f] %s (%s) spawned off its %s side at %s" % [game.time, s.display_name, GameConfig.TEAM_NAMES[s.team], side, s.global_position])
+		_was_alive[s] = s.alive
+
+
 func _finish() -> void:
-	print("mounts: %d  deaths: %d" % [_mounts, _kills])
+	var wall := (Time.get_ticks_msec() - _wall_start) / 1000.0
+	print("mounts: %d  deaths: %d  respawns: %d (wrong side %d)  bunker flips: %d" % [_mounts, _kills, _spawns, _bad_spawns, _flips])
+	print("simulated %.0f s in %.1f s wall (%.2fx real time, %d soldiers)" % [SIM_SECONDS, wall, SIM_SECONDS / wall, game.soldiers.size()])
+	if _bad_spawns > 0:
+		_failures.append("%d respawns on the wrong side" % _bad_spawns)
 	if _mounts == 0:
 		_failures.append("no bot ever manned the Maxim")
 	if _kills == 0:

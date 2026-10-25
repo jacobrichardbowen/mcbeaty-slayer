@@ -21,8 +21,8 @@ func _initialize() -> void:
 
 func _start() -> void:
 	InputSetup.register()
-	GameConfig.red_bots = 4
-	GameConfig.white_bots = 2
+	GameConfig.red_bots = 16
+	GameConfig.white_bots = 15
 	game = Game.new()
 	root.add_child(game)
 	game.start()
@@ -46,6 +46,8 @@ func _start() -> void:
 		["soldiers", "free", Vector3(0.5, 1.9, -53.2), Vector3(0, 1.1, -57.5)],
 		["roost", "fp", Vector3(-20, 0, 12), Vector3(-39, 6, 26)],
 		["pad", "fp", Vector3(20, 0, 10), Vector3(37, 0, 29)],
+		["scoreboard", "scoreboard", Vector3(0, 0, -20), Vector3(0, 8, -44)],
+		["capture", "capture", Vector3(0, 0, -20), Vector3(0, 8, -44)],
 	]
 
 
@@ -88,6 +90,17 @@ func _setup(shot: Array) -> void:
 			p.global_position = game.turret.seat_position()
 			p.snap_interpolation()
 			game.turret.mount(p)
+		"scoreboard":
+			game.player_ctrl.camera.current = true
+			_place(p, shot[2], shot[3])
+			Input.action_press("scoreboard")
+		"capture":
+			# Reds halfway through taking the bunker.
+			Input.action_release("scoreboard")
+			game.player_ctrl.camera.current = true
+			_place(p, shot[2], shot[3])
+			game.bunker.challenger = GameConfig.TEAM_RED
+			game.bunker.progress = 0.6
 		"turret_aim":
 			# Swing the gun toward a point on the island and fire a burst.
 			game.player_ctrl.camera.current = true

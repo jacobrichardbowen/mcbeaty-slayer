@@ -45,13 +45,14 @@ func _ready() -> void:
 	box.add_child(grid)
 
 	var side := OptionButton.new()
-	side.add_item("At the tower: hold the Maxim")
-	side.add_item("Far side: storm the tower")
+	side.add_item("Whites (you): defend it")
+	side.add_item("Reds: you storm it")
 	side.selected = 0 if GameConfig.player_starts_at_tower else 1
 	side.item_selected.connect(func(i: int) -> void: GameConfig.player_starts_at_tower = i == 0)
-	_row(grid, "Whites (you) start", side)
-	_row(grid, "Red bots", _spin(1, 8, GameConfig.red_bots, func(v: float) -> void: GameConfig.red_bots = int(v)))
-	_row(grid, "White bots (your side)", _spin(0, 7, GameConfig.white_bots, func(v: float) -> void: GameConfig.white_bots = int(v)))
+	_row(grid, "Bunker starts with", side)
+	var most := GameConfig.MAX_PER_TEAM
+	_row(grid, "Red bots", _spin(1, most, GameConfig.red_bots, func(v: float) -> void: GameConfig.red_bots = int(v)))
+	_row(grid, "White bots (your side)", _spin(0, most - 1, GameConfig.white_bots, func(v: float) -> void: GameConfig.white_bots = int(v)))
 	_row(grid, "Score limit", _spin(5, 250, GameConfig.score_limit, func(v: float) -> void: GameConfig.score_limit = int(v), 5))
 	_row(grid, "Mouse sensitivity", _slider(0.02, 0.4, GameConfig.mouse_sensitivity, func(v: float) -> void: GameConfig.mouse_sensitivity = v))
 	_row(grid, "Field of view (Halo 2 = 70)", _slider(60, 100, GameConfig.fov, func(v: float) -> void: GameConfig.fov = v, 1.0))

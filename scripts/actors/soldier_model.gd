@@ -19,9 +19,14 @@ var _dead := false
 var _death_t := 0.0
 var _death_axis := Vector3.RIGHT
 var _first_person := false
+var _soldier: Soldier
 
 
 func _ready() -> void:
+	# Drawn at the soldier's interpolated position so 60 Hz physics still
+	# looks smooth on fast monitors.
+	_soldier = get_parent() as Soldier
+	top_level = true
 	var coat := Color(0.86, 0.86, 0.82) if team == GameConfig.TEAM_WHITE else Color(0.66, 0.13, 0.1)
 	var trousers := Color(0.28, 0.3, 0.33) if team == GameConfig.TEAM_WHITE else Color(0.33, 0.28, 0.22)
 	var skin := Color(0.86, 0.68, 0.55)
@@ -119,6 +124,11 @@ func _sphere(r: float) -> SphereMesh:
 
 
 ## First person hides the body but keeps its shadow.
+func _process(_delta: float) -> void:
+	if _soldier:
+		global_position = _soldier.interpolated_position()
+
+
 func set_first_person(on: bool) -> void:
 	_first_person = on
 	for mi in _meshes:

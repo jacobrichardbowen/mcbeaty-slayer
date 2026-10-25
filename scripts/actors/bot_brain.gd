@@ -1,10 +1,15 @@
 class_name BotBrain
 extends RefCounted
 ## Rudimentary bot. Goals, in order:
-##   1. Shoot or punch any enemy it can see up close.
-##   2. If nobody holds the Maxim, run to it and man it.
-##   3. If the enemy holds it, storm the tower along a side path.
-##   4. If its own team holds it, guard the tower.
+##   1. Shoot or punch enemies within shotgun-fight range (farther ones are
+##      ignored so the objective still gets played).
+##   2. Gun empty: the two teammates nearest the seat race to man it; the rest
+##      guard the bunker if their team holds it, or push in to capture it.
+##   3. Enemy on the gun: storm the tower along a side path, regrouping with
+##      teammates at the end of the path first so they go in together.
+##   4. Own team on the gun: guard the bunker.
+## About half of each team are hunters: while their team holds the bunker
+## they roam the island looking for fights instead of guarding.
 ## On the gun it sweeps the arc for targets and hops off if someone sneaks
 ## up from outside the traverse.
 
@@ -22,6 +27,9 @@ var _strafe := 1.0
 var _strafe_t := 0.0
 var _route: Array = []
 var _route_i := 0
+var _rally_i := -1
+var _rally_wait := 0.0
+var _rallied := false
 var _goal := Vector3.ZERO
 var _defend_t := 0.0
 var _stuck_t := 0.0
@@ -30,6 +38,12 @@ var _unstick_t := 0.0
 var _unstick_move := Vector2.ZERO
 var _burst_t := 0.0
 var _repath_t := 0.0
+var _runner := false
+var _hop := false
+var _move_world := Vector3.ZERO  # last requested move, world space
+var hunter := false
+var _ledge_ok := true
+var _ledge_t := 0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -52,6 +66,8 @@ func on_spawned() -> void:
 	target = null
 	_seen_for = 0.0
 	_route_i = 0
+	_rally_wait = 0.0
+	_rallied = false
 	_route = _pick_route()
 	_stuck_t = 0.0
 	_stuck_check = s.global_position
@@ -81,6 +97,7 @@ func _pick_route() -> Array:
 	# Spawning at the tower: no route needed.
 	if s.global_position.z < -30.0:
 		return []
+	_rally_i = game.level.route_rally.get(key, -1)
 	return routes[key]
 
 
@@ -92,12 +109,14 @@ func gather_input(delta: float) -> void:
 	s.in_reload = false
 	s.in_melee = false
 	s.in_action = false
+	_move_world = Vector3.ZERO
 	if game.over:
 		return
 	_think -= delta
 	if _think <= 0.0:
-		_think = 0.12
+		_think = 0.15
 		_perceive()
+		_runner = _is_seat_runner()
 	if target:
 		_seen_for += delta
 	if s.turret:
@@ -118,25 +137,27 @@ func _perceive() -> void:
 	var fwd := s.aim_direction()
 	if s.turret:
 		eye = s.turret.pivot_position()
-	var best: Soldier = null
-	var best_d := INF
+	var candidates: Array = []
 	for o in game.soldiers:
 		if not o.alive or not s.is_enemy(o):
 			continue
 		var to := o.chest_position() - eye
 		var d := to.length()
-		if d > GameConfig.BOT_VIEW_RANGE:
-			continue
 		if s.turret:
-			if not s.turret.in_arc(to) and d > 10.0:
+			if d > GameConfig.BOT_VIEW_RANGE or (not s.turret.in_arc(to) and d > 10.0):
 				continue
+		elif d > (GameConfig.BOT_ENGAGE_RANGE * 1.5 if o == target else GameConfig.BOT_ENGAGE_RANGE):
+			continue
 		elif d > 8.0 and to.normalized().dot(fwd) < 0.2 and o != target:
 			continue
-		if not game.has_line_of_sight(eye, o.chest_position()):
-			continue
-		if d < best_d:
-			best_d = d
-			best = o
+		candidates.append([d, o])
+	candidates.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	# Line-of-sight rays are the expensive part: only test the nearest few.
+	var best: Soldier = null
+	for c in candidates.slice(0, 4):
+		if game.has_line_of_sight(eye, (c[1] as Soldier).chest_position()):
+			best = c[1]
+			break
 	if best:
 		if best != target:
 			_seen_for = 0.0
@@ -156,10 +177,14 @@ func _engage(delta: float) -> void:
 	var visible := s.now() - _last_seen < 0.3
 	if not visible:
 		aim_point = _last_seen_pos + Vector3(0, 1.2, 0)
-	_aim_at(aim_point, delta, GameConfig.BOT_TURN_RATE)
-	_aim_err = _aim_err.move_toward(Vector2.ZERO, delta * deg_to_rad(4.0))
 	var to := target.global_position - s.global_position
 	var dist := Vector2(to.x, to.z).length()
+	var chase := _should_chase(dist)
+	if not chase:
+		# Keep working the objective (route, rally, guard post) while shooting.
+		_objective(delta)
+	_aim_at(aim_point, delta, GameConfig.BOT_TURN_RATE)
+	_aim_err = _aim_err.move_toward(Vector2.ZERO, delta * deg_to_rad(4.0))
 	var err := s.aim_direction().angle_to(aim_point - s.eye_position())
 	if visible and _seen_for > GameConfig.BOT_REACTION:
 		if dist < 2.6 and err < 0.6:
@@ -171,20 +196,35 @@ func _engage(delta: float) -> void:
 	if _strafe_t <= 0.0:
 		_strafe_t = _rng.randf_range(0.4, 1.1)
 		_strafe = -_strafe if _rng.randf() < 0.7 else _strafe
-		if _rng.randf() < 0.15 and dist < 10.0:
-			s.in_jump = true
-	var move_dir := Vector3.ZERO
-	if dist > 3.5:
+		_hop = _rng.randf() < 0.15 and dist < 10.0
+	var move_dir := _move_world if not chase else Vector3.ZERO
+	if chase and dist > 3.5:
 		move_dir = _nav_direction(target.global_position if visible else _last_seen_pos)
 	var right := Basis(Vector3.UP, s.look_yaw).x
 	var strafe_dir := right * _strafe
 	if not _safe_ahead(strafe_dir):
 		_strafe = -_strafe
 		strafe_dir = -strafe_dir
-	move_dir = (move_dir + strafe_dir * (0.8 if dist < 12.0 else 0.4)).normalized()
+	move_dir = (move_dir + strafe_dir * (0.8 if dist < 12.0 and chase else 0.4)).normalized()
 	_set_move(move_dir)
+	if _hop and _can_jump(move_dir):
+		s.in_jump = true
+	_hop = false
 	if s.weapon.mag < 4 and dist > 12.0:
 		s.in_reload = true
+
+
+## Bots on a job don't get dragged off it: attackers stay on their route,
+## guards stay near the tower. Anyone very close is always fair game.
+func _should_chase(dist: float) -> bool:
+	if dist < 7.0:
+		return true
+	var holding := game.bunker.holder == s.team
+	if not holding and _route_i < _route.size():
+		return false
+	if holding and not hunter:
+		return target.global_position.distance_to(AscensionLevel.TOWER_CENTER) < 25.0
+	return true
 
 
 # --- Objective ------------------------------------------------------------------------
@@ -192,26 +232,31 @@ func _engage(delta: float) -> void:
 func _objective(delta: float) -> void:
 	var t := game.turret
 	var seat := t.seat_position()
-	if t.gunner == null:
+	var holding := game.bunker.holder == s.team
+	if t.gunner == null and _runner:
 		if _route_i < _route.size() and s.global_position.distance_to(seat) > 25.0:
-			_follow_route(delta)
+			_follow_route(delta, not holding)
 			return
 		_goal = seat
 		if s.global_position.distance_to(seat) < GameConfig.MG_MOUNT_RANGE - 0.4:
 			s.in_action = true
 			_face_dir(t.barrel_direction(), delta)
 			return
-	elif t.gunner.team != s.team:
+	elif t.gunner != null and t.gunner.team != s.team:
 		if _route_i < _route.size():
-			_follow_route(delta)
+			_follow_route(delta, not holding)
 			return
 		_goal = seat
+	elif hunter and holding:
+		_patrol(game.level.hunt_points, delta)
+	elif holding or (t.gunner != null and t.gunner.team == s.team):
+		_patrol(game.level.defend_points, delta)
 	else:
-		_defend_t -= delta
-		if _defend_t <= 0.0 or s.global_position.distance_to(_goal) < 1.5:
-			_defend_t = _rng.randf_range(6.0, 12.0)
-			var pts: Array[Vector3] = game.level.defend_points
-			_goal = pts[_rng.randi() % pts.size()]
+		# Gun empty and the bunker is theirs: get inside it to take it over.
+		if _route_i < _route.size():
+			_follow_route(delta, not holding)
+			return
+		_patrol(game.level.capture_points, delta)
 	var dir := _nav_direction(_goal)
 	_set_move(dir)
 	if dir != Vector3.ZERO:
@@ -220,16 +265,53 @@ func _objective(delta: float) -> void:
 		s.in_reload = true
 
 
-func _follow_route(delta: float) -> void:
+func _patrol(points: Array[Vector3], delta: float) -> void:
+	_defend_t -= delta
+	if _defend_t <= 0.0 or s.global_position.distance_to(_goal) < 1.5 or not points.has(_goal):
+		_defend_t = _rng.randf_range(6.0, 12.0)
+		_goal = points[_rng.randi() % points.size()]
+
+
+## The two living teammates closest to the gun seat go for it.
+func _is_seat_runner() -> bool:
+	var seat := game.turret.seat_position()
+	var mine := s.global_position.distance_squared_to(seat)
+	var closer := 0
+	for o in game.soldiers:
+		if o != s and o.alive and o.team == s.team and o.global_position.distance_squared_to(seat) < mine:
+			closer += 1
+			if closer >= 2:
+				return false
+	return true
+
+
+func _follow_route(delta: float, attacking: bool) -> void:
 	var wp: Vector3 = _route[_route_i]
 	var flat := Vector2(wp.x - s.global_position.x, wp.z - s.global_position.z)
 	if flat.length() < 2.5:
+		if attacking and _route_i == _rally_i and not _rallied and not _rally_ready(wp, delta):
+			# Wait crouched (off the motion tracker), facing the tower.
+			s.in_crouch = true
+			_set_move(Vector3.ZERO)
+			_face_dir(game.turret.seat_position() - s.global_position, delta)
+			return
 		_route_i += 1
 		return
 	var dir := _nav_direction(wp)
 	_set_move(dir)
 	if dir != Vector3.ZERO:
 		_face_dir(dir, delta)
+
+
+func _rally_ready(point: Vector3, delta: float) -> bool:
+	_rally_wait += delta
+	var group := 1
+	for o in game.soldiers:
+		if o != s and o.alive and o.team == s.team and o.global_position.distance_to(point) < 8.0:
+			group += 1
+	if group >= GameConfig.BOT_RALLY_SIZE or _rally_wait >= GameConfig.BOT_RALLY_MAX_WAIT:
+		_rallied = true
+	return _rallied
 
 
 # --- Turret ---------------------------------------------------------------------------
@@ -245,7 +327,7 @@ func _drive_turret(delta: float) -> void:
 			return
 		var aim := target.chest_position() + target.velocity * 0.1
 		_aim_at_from(t.pivot_position(), aim, delta, 140.0)
-		_aim_err = _aim_err.move_toward(Vector2.ZERO, delta * deg_to_rad(1.5))
+		_aim_err = _aim_err.move_toward(Vector2.ZERO, delta * deg_to_rad(3.0))
 		var err := t.barrel_direction().angle_to(aim - t.muzzle_position())
 		_burst_t -= delta
 		if _burst_t < -0.35:
@@ -295,10 +377,16 @@ func _nav_direction(goal: Vector3) -> Vector3:
 
 
 func _set_move(world_dir: Vector3) -> void:
+	_move_world = world_dir
 	var b := Basis(Vector3.UP, s.look_yaw)
 	s.in_move = Vector2(world_dir.dot(b.x), world_dir.dot(-b.z))
 	# Ease off when the ground ahead runs out, so momentum can't carry us over.
-	if world_dir != Vector3.ZERO and s.is_on_floor() and not _safe_ahead(world_dir, 0.9):
+	# (Navmesh queries are costly; refresh every few ticks.)
+	_ledge_t -= 1
+	if _ledge_t <= 0:
+		_ledge_t = 3
+		_ledge_ok = world_dir == Vector3.ZERO or not s.is_on_floor() or _safe_ahead(world_dir, 0.9)
+	if not _ledge_ok:
 		s.in_move *= 0.3
 
 
@@ -330,6 +418,13 @@ func _safe_ahead(dir: Vector3, reach := 1.2) -> bool:
 	return Vector2(closest.x - probe.x, closest.z - probe.z).length() < 0.35 and absf(closest.y - probe.y) < 1.0
 
 
+## A hop carries a soldier ~5 m, so only jump with solid ground well ahead.
+func _can_jump(dir: Vector3) -> bool:
+	if dir == Vector3.ZERO:
+		return _safe_ahead(Basis(Vector3.UP, s.look_yaw).x, 1.5) and _safe_ahead(-Basis(Vector3.UP, s.look_yaw).x, 1.5)
+	return _safe_ahead(dir, 1.5) and _safe_ahead(dir, 3.0) and _safe_ahead(dir, 4.5)
+
+
 func _unstick(delta: float) -> void:
 	if s.in_move.length() < 0.3 or s.turret:
 		_stuck_t = 0.0
@@ -339,10 +434,11 @@ func _unstick(delta: float) -> void:
 	_stuck_t += delta
 	if _stuck_t > 1.0:
 		if s.global_position.distance_to(_stuck_check) < 0.6:
-			s.in_jump = true
 			_unstick_t = 0.6
 			_strafe = -_strafe
 			_unstick_move = (Vector2(_strafe, 0.0) - s.in_move.normalized()).normalized()
+			var b := Basis(Vector3.UP, s.look_yaw)
+			s.in_jump = _can_jump(b.x * _unstick_move.x - b.z * _unstick_move.y)
 		_stuck_t = 0.0
 		_stuck_check = s.global_position
 	if _unstick_t > 0.0:
