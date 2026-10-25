@@ -14,6 +14,13 @@ func _ready() -> void:
 		_show_menu()
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_fullscreen"):
+		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+		get_viewport().set_input_as_handled()
+
+
 func _show_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_menu = MainMenu.new()

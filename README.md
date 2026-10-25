@@ -16,15 +16,44 @@ Maxim M1910 on a wheeled Sokolov mount. All models are crude primitives.
 |---|---|
 | ![Overview](docs/overview.jpg) | ![Whites vs Reds](docs/whites_vs_reds.jpg) |
 
-## Running it
+## Playing it
 
-1. Install **Godot 4.3 or newer** (the standard build; .NET isn't needed) from
-   <https://godotengine.org/download>.
-2. Open Godot, choose **Import**, and select this folder's `project.godot`.
-3. Press **F5** (Run Project). Pick the options in the lobby and press **Deploy**.
+You don't need Godot to play. Each build is one download, and nothing gets
+installed:
 
-From a terminal: `godot --path .`, or `godot --path . -- --autostart` to skip
-the lobby.
+- **Windows**: `McbeatySlayer.exe`. Double-click it. The whole game is packed
+  inside that one file.
+- **Mac**: `McbeatySlayer-Mac.zip`. Double-click to unzip, then double-click
+  **Mcbeaty Slayer**. It runs on both Apple Silicon and Intel Macs.
+
+The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
+to play. F11 switches between fullscreen and a window. Esc pauses and has
+**Quit game**.
+
+**The first launch asks for approval once**, because the builds aren't signed
+with a paid developer certificate:
+
+- **Windows** shows "Windows protected your PC": click **More info**, then
+  **Run anyway**.
+- **Mac** says Apple can't verify the app:
+  - On macOS 15 (Sequoia) or newer, open **System Settings → Privacy &
+    Security**, scroll down, click **Open Anyway** next to *Mcbeaty Slayer*,
+    and confirm.
+  - On older macOS, Control-click the app, choose **Open**, then **Open**
+    again.
+
+After that it opens with a normal double-click.
+
+### Making new builds
+
+With Godot 4.3 and its export templates installed, `tools/build.sh` exports
+all three builds (Windows, Mac, Linux) into `build/`.
+
+### Running from the editor
+
+Install **Godot 4.3** (the standard build, not .NET), choose **Import**,
+select `project.godot`, and press **F5**. From a terminal, `godot --path .`
+runs it, and `godot --path . -- --autostart` skips the lobby.
 
 ### Lobby options
 

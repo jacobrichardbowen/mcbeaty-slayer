@@ -6,7 +6,7 @@ signal start_requested
 
 const CONTROLS := """Mouse / keyboard: WASD move, mouse look, Left click fire, Space jump,
 Ctrl or C crouch, F / V / middle click melee, R reload, hold E man the Maxim,
-Tab scoreboard, Esc pause.
+Tab scoreboard, Esc pause, F11 or Alt+Enter fullscreen.
 Gamepad (Halo 2 layout): sticks move/look, RT fire, A jump, B melee,
 X reload / hold X to man the Maxim, L3 crouch, Back scoreboard, Start pause."""
 

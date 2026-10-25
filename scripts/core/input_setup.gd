@@ -17,6 +17,11 @@ static func register() -> void:
 	_keys("action", [KEY_E])
 	_keys("scoreboard", [KEY_TAB])
 	_keys("pause", [KEY_ESCAPE, KEY_P])
+	_keys("toggle_fullscreen", [KEY_F11])
+	var alt_enter := InputEventKey.new()
+	alt_enter.physical_keycode = KEY_ENTER
+	alt_enter.alt_pressed = true
+	InputMap.action_add_event("toggle_fullscreen", alt_enter)
 	_mouse("fire", MOUSE_BUTTON_LEFT)
 	_mouse("melee", MOUSE_BUTTON_MIDDLE)
 

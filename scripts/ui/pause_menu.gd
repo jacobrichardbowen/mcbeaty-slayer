@@ -42,7 +42,7 @@ func _ready() -> void:
 	inv.toggled.connect(func(on: bool) -> void: GameConfig.invert_y = on)
 	box.add_child(inv)
 	for entry in [["Resume", _close], ["Restart match", func() -> void: _leave(restart_requested)],
-			["Quit to menu", func() -> void: _leave(quit_requested)]]:
+			["Quit to menu", func() -> void: _leave(quit_requested)], ["Quit game", func() -> void: get_tree().quit()]]:
 		var b := Button.new()
 		b.text = entry[0]
 		b.custom_minimum_size = Vector2(0, 40)

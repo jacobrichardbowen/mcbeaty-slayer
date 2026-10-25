@@ -2,3 +2,6 @@
 .godot/
 *.tmp
 *.translation
+
+# Exported game builds
+build/

@@ -563,8 +563,8 @@ func _bake_navigation() -> void:
 	nm.cell_size = 0.25
 	nm.cell_height = 0.25
 	nm.agent_height = 2.0
-	nm.agent_radius = 0.7  # wider than the body: running bots overshoot corners
-	nm.agent_max_climb = 0.45
+	nm.agent_radius = 0.75  # wider than the body: running bots overshoot corners
+	nm.agent_max_climb = 0.25  # soldiers step up 0.45 m, keep the navmesh stricter
 	nm.agent_max_slope = 40.0
 	nm.region_min_size = 4.0
 	nav_region.navigation_mesh = nm
