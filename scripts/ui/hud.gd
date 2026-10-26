@@ -114,11 +114,14 @@ func _draw_crosshair(sz: Vector2, pc: PlayerController) -> void:
 			var d := Vector2.RIGHT.rotated(i * PI * 0.5)
 			_canvas.draw_line(c + d * gap, c + d * (gap + 9.0), col, 2.0)
 	else:
-		_canvas.draw_arc(c, 26.0, 0.0, TAU, 48, col, 2.0)
+		# Halo 2's big shotgun ring, drawn at the true size of the pellet cone.
+		var half_fov := deg_to_rad(pc.camera.fov) * 0.5
+		var ring := tan(deg_to_rad(GameConfig.SG_SPREAD)) / tan(half_fov) * sz.y * 0.5
+		_canvas.draw_arc(c, ring, 0.0, TAU, 64, col, 2.0)
 		_canvas.draw_circle(c, 2.0, col)
 		for i in 4:
 			var d := Vector2.RIGHT.rotated(i * PI * 0.5 + PI * 0.25)
-			_canvas.draw_line(c + d * 20.0, c + d * 30.0, col, 2.0)
+			_canvas.draw_line(c + d * (ring - 6.0), c + d * (ring + 6.0), col, 2.0)
 	if pc.aim_target:
 		var tc: Color = GameConfig.TEAM_COLORS[pc.aim_target.team]
 		_text(Vector2(0, c.y + 58.0), pc.aim_target.display_name, 18, tc, HORIZONTAL_ALIGNMENT_CENTER, sz.x)

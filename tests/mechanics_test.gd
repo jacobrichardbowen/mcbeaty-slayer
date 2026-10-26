@@ -2,7 +2,7 @@ extends SceneTree
 ## Checks the core Tower of Power numbers in a live world (no bots):
 ## shotgun range, melee, fall damage, jump height, turret arc and lethality,
 ## the bunker-control rules that decide where each team spawns, the neutral
-## start, and the Mosin rifle and respawn weapon choice.
+## start, ragdolls, and the Mosin rifle and respawn weapon choice.
 ## Run: godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 
 var game: Game
@@ -78,21 +78,41 @@ func _physics_process(_delta: float) -> bool:
 				_expect(game.bunker.holder == -1, "the match starts with the bunker up for grabs")
 				_expect(_near_spawn(p, "west") and _near_spawn(d, "east"), "Whites start west and Reds east")
 			if _frames > 30:
-				_data["kills5"] = 0
+				_data["kills4"] = 0
 				_data["trial"] = 0
 				_next()
-		1:  # Shotgun at 5 m kills (average of several blasts).
-			_shot_trial(5.0, "kills5")
+		1:  # Halo 2's spread: a sure kill up close...
+			_shot_trial(4.0, "kills4", 10)
 		2:
-			_expect(_data["kills5"] == 5, "shotgun one-shot kills at 5 m (%d/5)" % _data["kills5"])
+			_expect(_data["kills4"] >= 9, "shotgun one-shot kills at 4 m (%d/10)" % _data["kills4"])
 			_data["kills15"] = 0
 			_data["trial"] = 0
 			_next()
-		3:
-			_shot_trial(15.0, "kills15")
+		3:  # ...and only the odd lucky kill at 15 m.
+			_shot_trial(15.0, "kills15", 20)
 		4:
-			_expect(_data["kills15"] == 0, "shotgun does not one-shot at 15 m (%d/5)" % _data["kills15"])
-			_next()
+			if _frames == 1:
+				_expect(_data["kills15"] <= 4, "shotgun rarely one-shots at 15 m (%d/20)" % _data["kills15"])
+				_place(p, Vector3(-10, 0, 19.5))
+				_place(d, Vector3(-7.5, 0, 19.5))
+				_aim(p, d.chest_position())
+				p.weapon.reset()
+			elif _frames == 3:
+				p.in_fire = true
+			elif _frames == 4:
+				p.in_fire = false
+			elif _frames == 5:
+				_expect(not d.alive and is_instance_valid(d.ragdoll) and not d.model.visible, "a kill swaps the body for a ragdoll")
+				_data["torso0"] = d.ragdoll.torso_position() if is_instance_valid(d.ragdoll) else Vector3.ZERO
+			elif _frames == 5 + TPS / 2:
+				var moved: float = d.ragdoll.torso_position().x - _data["torso0"].x if is_instance_valid(d.ragdoll) else 0.0
+				_expect(moved > 1.5, "a point-blank blast throws the body along the shot (%.1f m in 0.5 s)" % moved)
+			elif _frames == 5 + TPS * 3:
+				var y: float = d.ragdoll.torso_position().y if is_instance_valid(d.ragdoll) else -100.0
+				_expect(y > game.ground_point(d.ragdoll.torso_position()).y - 0.3 and y < 2.0, "the body comes to rest on the ground (torso at y %.2f)" % y)
+				_place(d, Vector3(-7.5, 0, 19.5))
+				_expect(d.model.visible and d.ragdoll == null, "respawning shows the soldier again")
+				_next()
 		5:  # Melee is a one-hit kill with shields off.
 			if _frames == 1:
 				_place(p, Vector3(0, 0, 18))
@@ -131,7 +151,7 @@ func _physics_process(_delta: float) -> bool:
 				_data["apex"] = maxf(_data["apex"], p.global_position.y)
 			else:
 				var h: float = _data["apex"] - _data["y0"]
-				_expect(h > 1.2 and h < 1.5, "jump height %.2f m (Halo-ish 1.2-1.5)" % h)
+				_expect(h > 1.65 and h < 1.95, "jump height %.2f m (partway to Halo 2's 2.4: 1.65-1.95)" % h)
 				_next()
 		8:  # Jumping off the tower deck hurts but does not kill.
 			if _frames == 1:
@@ -301,14 +321,14 @@ func _next() -> void:
 	_frames = 0
 
 
-func _shot_trial(dist: float, key: String) -> void:
+func _shot_trial(dist: float, key: String, trials: int) -> void:
 	var p := game.player
 	var d := _dummy
 	# Bodies moved this frame only reach the physics server next frame,
-	# so place first and pull the trigger two frames later.
+	# so place first and pull the trigger two frames later. Flat ground.
 	if _frames == 1:
-		_place(p, Vector3(0, 0, 18))
-		_place(d, Vector3(0, 0, 18 - dist))
+		_place(p, Vector3(-10, 0, 19.5))
+		_place(d, Vector3(-10 + dist, 0, 19.5))
 		_aim(p, d.chest_position())
 		p.weapon.reset()
 	elif _frames == 3:
@@ -319,7 +339,7 @@ func _shot_trial(dist: float, key: String) -> void:
 		if not d.alive:
 			_data[key] += 1
 		_data["trial"] += 1
-		if _data["trial"] >= 5:
+		if _data["trial"] >= trials:
 			_next()
 		else:
 			_frames = 0

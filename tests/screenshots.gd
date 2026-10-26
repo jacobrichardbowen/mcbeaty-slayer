@@ -1,7 +1,7 @@
 extends SceneTree
 ## Renders a handful of viewpoints to PNG for eyeballing the blockout.
 ## Run (needs a display, e.g. xvfb-run):
-##   godot --path . --rendering-method gl_compatibility --resolution 1280x720 -s tests/screenshots.gd -- <out_dir>
+##   godot --path . --rendering-method gl_compatibility --resolution 1280x720 --fixed-fps 60 -s tests/screenshots.gd -- <out_dir>
 
 var game: Game
 var _out := "user://shots"
@@ -33,7 +33,7 @@ func _start() -> void:
 	_cam = Camera3D.new()
 	_cam.far = 3000.0
 	game.add_child(_cam)
-	# [name, kind, a, b] kind: "fp" = player at a looking toward b; "free" = camera at a looking at b; "turret"
+	# [name, kind, a, b, frames to wait] kind: "fp" = player at a looking toward b; "free" = camera at a looking at b; "turret"
 	_shots = [
 		["overview_south", "free", Vector3(10, 75, 85), Vector3(0, 0, -10)],
 		["overview_side", "free", Vector3(-95, 45, -10), Vector3(0, 0, -15)],
@@ -50,6 +50,8 @@ func _start() -> void:
 		["capture", "capture", Vector3(0, 0, -20), Vector3(0, 8, -44)],
 		["rifle", "rifle", Vector3(4, 0, 12), Vector3(0, 6, -44)],
 		["rifle_zoom", "rifle_zoom", Vector3(4, 0, 12), Vector3(0, 8, -44)],
+		["ragdoll_flight", "ragdoll", Vector3(-1, 1.6, 28), Vector3(-1, 1.0, 18.5), 16],
+		["ragdoll_rest", "free", Vector3(3.5, 2.6, 22.5), Vector3(3.2, 0.2, 17), 150],
 		["respawn_pick", "dead", Vector3(4, 0, 12), Vector3(0, 6, -44)],
 	]
 
@@ -63,7 +65,7 @@ func _process(_delta: float) -> bool:
 	if _wait == 0:
 		_setup(_shots[_i])
 	_wait += 1
-	if _wait == 25:
+	if _wait == (_shots[_i][4] if _shots[_i].size() > 4 else 25):
 		var img := root.get_viewport().get_texture().get_image()
 		var path := "%s/%02d_%s.png" % [_out, _i, _shots[_i][0]]
 		img.save_png(path)
@@ -115,6 +117,22 @@ func _setup(shot: Array) -> void:
 			game.player_ctrl.camera.current = true
 			_place(p, shot[2], shot[3])
 			p.zoomed = true
+		"ragdoll":
+			# A point-blank shotgun kill on each team, thrown across the view.
+			p.zoomed = false
+			_cam.current = true
+			_cam.global_position = shot[2]
+			_cam.look_at(shot[3], Vector3.UP)
+			var spots := [Vector3(-5, 0, 20.5), Vector3(-3, 0, 18.5)]
+			for team in 2:
+				for s in game.soldiers:
+					if s != p and s.team == team and s.alive:
+						s.global_position = game.ground_point(spots[team])
+						s.look_yaw = 0.3
+						s.snap_interpolation()
+						s.model._process(0.0)
+						s.die(null, "shotgun", Vector3(1, 0, -0.6 + team * 0.4), GameConfig.FLING_SHOTGUN_MAX)
+						break
 		"dead":
 			p.zoomed = false
 			game.player_ctrl.camera.current = true

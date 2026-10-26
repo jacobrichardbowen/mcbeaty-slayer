@@ -4,21 +4,23 @@ extends RefCounted
 ## files. Each sound is rendered once into an AudioStreamWAV and cached.
 
 const RATE := 22050
+# Halo 2 picks one of three recordings per shot, so repeats never sound canned.
+const VARIANTS := {"shotgun": 3, "rifle": 3}
 
 static var _cache := {}
 
 
 static func stream(sound: String) -> AudioStreamWAV:
+	if VARIANTS.has(sound):
+		sound += str(randi() % int(VARIANTS[sound]))
 	if _cache.has(sound):
 		return _cache[sound]
 	var s: PackedFloat32Array
 	match sound:
-		"shotgun":
-			s = _mix([_noise(0.9, 0.11, 3200.0, 1.0), _tone(52.0, 0.9, 0.16, 0.9), _noise(0.02, 0.004, 9000.0, 0.6)])
-		"rifle":
-			# Sharp supersonic crack, a short body, then a rolling echo off the peaks.
-			s = _mix([_noise(0.03, 0.006, 9000.0, 0.9), _noise(0.25, 0.045, 3800.0, 1.0),
-				_tone(95.0, 0.25, 0.07, 0.7), _delay(_noise(0.9, 0.28, 900.0, 0.22), 0.09)])
+		"shotgun0", "shotgun1", "shotgun2":
+			s = _shotgun(int(sound.right(1)))
+		"rifle0", "rifle1", "rifle2":
+			s = _rifle(int(sound.right(1)))
 		"bolt":
 			s = _mix([_click(0.0, 0.6), _click(0.09, 0.5), _tone(520.0, 0.04, 0.01, 0.2)])
 		"clip":
@@ -54,6 +56,15 @@ static func stream(sound: String) -> AudioStreamWAV:
 	return wav
 
 
+## Renders every sound up front so the first shots of a match don't hitch.
+static func warm_up() -> void:
+	for sound in ["maxim", "pump", "bolt", "clip", "shell", "dry", "swing", "melee_hit", "step", "land", "hurt"]:
+		stream(sound)
+	for sound: String in VARIANTS:
+		for take in int(VARIANTS[sound]):
+			stream(sound + str(take))
+
+
 static func play_3d(parent: Node, sound: String, pos: Vector3, volume_db := 0.0, jitter := 0.06, max_dist := 160.0) -> void:
 	if parent == null or not parent.is_inside_tree():
 		return
@@ -79,6 +90,28 @@ static func play_2d(parent: Node, sound: String, volume_db := 0.0, jitter := 0.0
 	parent.add_child(p)
 	p.finished.connect(p.queue_free)
 	p.play()
+
+
+# --- gunshots -------------------------------------------------------------------
+
+## Three takes of the blast: darker or brighter, boomier or tighter, and a
+## different slap back off the cliffs.
+static func _shotgun(take: int) -> PackedFloat32Array:
+	var thump: float = [52.0, 46.0, 59.0][take]
+	var bright: float = [3200.0, 2600.0, 3900.0][take]
+	var tail: float = [0.11, 0.135, 0.095][take]
+	var echo: float = [0.1, 0.14, 0.075][take]
+	return _mix([_noise(0.9, tail, bright, 1.0), _tone(thump, 0.9, 0.16, 0.9),
+		_noise(0.02, 0.004, 9000.0, 0.6), _delay(_noise(0.7, 0.22, 800.0, 0.16), echo)])
+
+
+## Sharp supersonic crack, a short body, then a rolling echo off the peaks.
+static func _rifle(take: int) -> PackedFloat32Array:
+	var body: float = [3800.0, 3300.0, 4300.0][take]
+	var thump: float = [95.0, 86.0, 104.0][take]
+	var echo: float = [0.09, 0.13, 0.065][take]
+	return _mix([_noise(0.03, 0.006, 9000.0, 0.9), _noise(0.25, 0.045, body, 1.0),
+		_tone(thump, 0.25, 0.07, 0.7), _delay(_noise(0.9, 0.28, 900.0, 0.22), echo)])
 
 
 # --- synthesis helpers ---------------------------------------------------------

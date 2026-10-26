@@ -35,6 +35,7 @@ var _cam_yaw := 0.0
 var _cam_pitch := 0.0
 var _pad_accel := 0.0
 var _death_orbit := 0.0
+var _death_focus := Vector3.ZERO
 
 
 func setup(g: Game, s: Soldier) -> void:
@@ -225,6 +226,7 @@ func _sync_mode() -> void:
 		s.look_pitch = clampf(_cam_pitch, deg_to_rad(-85.0), deg_to_rad(85.0))
 	elif mode == "dead":
 		_death_orbit = s.look_yaw
+		_death_focus = s.chest_position()
 	s.model.set_first_person(mode == "fp")
 	_mode = mode
 
@@ -233,13 +235,18 @@ func _turret_cam_transform() -> Transform3D:
 	var t := soldier.turret
 	var pivot := t.pivot_position() + Vector3(0, 1.1, 0)
 	var dir := Vector3(-sin(_cam_yaw) * cos(_cam_pitch), sin(_cam_pitch), -cos(_cam_yaw) * cos(_cam_pitch))
-	var pos := pivot - dir * 3.3 + Vector3(0, 0.3, 0)
-	var exclude: Array[RID] = [soldier.get_rid(), t.shield_rid()]
-	var q := PhysicsRayQueryParameters3D.create(pivot, pos, GameConfig.LAYER_WORLD, exclude)
-	var r := get_world_3d().direct_space_state.intersect_ray(q)
-	if not r.is_empty():
-		pos = (r.position as Vector3) + (pivot - pos).normalized() * 0.3
+	var pos := _clear_view(pivot, pivot - dir * 3.3 + Vector3(0, 0.3, 0), [soldier.get_rid(), t.shield_rid()])
 	return Transform3D(Basis.looking_at(dir, Vector3.UP), pos)
+
+
+## Pulls a third-person camera in front of any wall between it and its subject.
+func _clear_view(from: Vector3, to: Vector3, exclude: Array[RID] = []) -> Vector3:
+	var q := PhysicsRayQueryParameters3D.create(from, to, GameConfig.LAYER_WORLD, exclude)
+	var r := get_world_3d().direct_space_state.intersect_ray(q)
+	if r.is_empty():
+		return to
+	var reach := maxf(from.distance_to(r.position) - 0.3, 0.6)
+	return from + (to - from).normalized() * reach
 
 
 func _process(delta: float) -> void:
@@ -259,10 +266,13 @@ func _process(delta: float) -> void:
 				xf.origin += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.025
 			camera.global_transform = xf
 		"dead":
+			# Orbit the body as it flies, like Halo 2's death camera.
 			_death_orbit += delta * 0.35
-			var corpse := s.global_position
-			camera.global_position = corpse + Vector3(sin(_death_orbit) * 4.5, 3.2, cos(_death_orbit) * 4.5)
-			camera.look_at(corpse + Vector3(0, 0.5, 0), Vector3.UP)
+			var body := s.ragdoll.focus() if is_instance_valid(s.ragdoll) else s.global_position + Vector3(0, 0.4, 0)
+			_death_focus = _death_focus.lerp(body, 1.0 - exp(-10.0 * delta))
+			var want := _death_focus + Vector3(sin(_death_orbit) * 4.5, 2.8, cos(_death_orbit) * 4.5)
+			camera.global_position = _clear_view(_death_focus, want)
+			camera.look_at(_death_focus, Vector3.UP)
 	# Zoom narrows the view like Halo 2's 2x scope and hides the gun.
 	var zoom := soldier.weapon.zoom_factor() if soldier.zoomed and _mode == "fp" else 1.0
 	_zoom_blend = move_toward(_zoom_blend, 1.0 if zoom > 1.0 else 0.0, delta * 8.0)

@@ -77,9 +77,12 @@ turret placed in one of the towers.
 
 - **Shields off**: 100 health, which slowly regenerates after 6 s without
   taking damage. One melee kills.
-- **Shotgun**: 12 shells, 15 pellets, shell-by-shell reload that you can cancel
-  by firing. One shot kills out to about 6–7 m. The red reticle comes on
-  within 10 m.
+- **Shotgun**: Halo 2's own numbers. 12 shells and 10 pellets, and any 3
+  pellets kill. The spread is wide, so a shot is a sure kill to about 5 m,
+  90% at 6 m, a coin flip at 9 m, and only the odd lucky kill at 12–15 m.
+  Pellets lose damage past 15 m and stop at 24 m. Shell-by-shell reload that
+  you can cancel by firing. The red reticle comes on within 10 m, and the ring
+  on screen shows the real spread.
 - **Mosin-Nagant** (prototype): semi-automatic, one round per trigger pull,
   5-round stripper clip, about 0.4 s between shots. Two body shots kill, one
   headshot kills. One tight round instead of a pellet spray: a quarter of a
@@ -90,6 +93,11 @@ turret placed in one of the towers.
   22° up to 55° down. Third-person camera while you're on it, as with Halo 2
   vehicles. The gunner stays exposed from the sides and from the stairwell
   that comes out right behind them.
+- **Movement**: partway to Halo 2. You run 6.6 m/s forwards and 6.2 sideways
+  or backwards (Halo 2: 6.9 and 6.1), and jump about 1.8 m (Halo 2: 2.4).
+- **Deaths**: bodies go limp and are thrown along the killing shot, hardest by
+  a point-blank shotgun blast, much as Havok did in Halo 2. The death camera
+  follows the body. Each gunshot plays one of three takes of its sound.
 - Melee lunge, crouch-jumping, fall damage, a 5 s respawn, kill feed, Halo 2
   multi-kill and spree callouts, and a motion tracker (25 m; it shows enemies
   only while they move upright or fire).
@@ -168,8 +176,9 @@ Headless checks, run from the project folder (they need the class cache, so
 run `godot --headless --path . --import` once first):
 
 ```
-# Weapons (shotgun and rifle), melee, jump height, fall damage, the turret's
-# arc and lethality, the neutral start, and every bunker-control and spawn rule
+# Weapons (shotgun and rifle), ragdolls, melee, jump height, fall damage, the
+# turret's arc and lethality, the neutral start, and every bunker-control and
+# spawn rule
 godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 
 # A 300 s bot match: navmesh connectivity, a bot mans the Maxim, kills happen,
@@ -177,7 +186,7 @@ godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 godot --headless --path . --fixed-fps 60 -s tests/smoke_test.gd -- reds=16 whites=15
 
 # Screenshots (needs a display; works under xvfb-run)
-godot --path . --resolution 1280x720 -s tests/screenshots.gd -- /tmp/shots
+godot --path . --resolution 1280x720 --fixed-fps 60 -s tests/screenshots.gd -- /tmp/shots
 ```
 
 ## Code layout
@@ -199,5 +208,6 @@ scripts/
   weapons/rifle.gd          semi-auto Mosin: bloom, headshots, clip reload, zoom
   weapons/maxim_turret.gd   the Tower of Power
   ui/hud.gd                 Halo 2-style HUD, tracker, kill feed
+  fx/ragdoll.gd             limp bodies thrown by the killing shot
   fx/                       particles, tracers and synthesized sounds (no asset files)
 ```

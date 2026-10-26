@@ -34,6 +34,7 @@ var loadout := "shotgun"
 var zoomed := false
 var turret: MaximTurret = null
 var model: SoldierModel
+var ragdoll: Ragdoll = null  # this life's body once dead, until it vanishes
 var kills := 0
 var deaths := 0
 var spree := 0
@@ -202,7 +203,7 @@ func _move(delta: float) -> void:
 		else:
 			hv = to / dist * GameConfig.MELEE_LUNGE_SPEED
 	elif on_floor:
-		var max_speed := GameConfig.CROUCH_SPEED if crouched else GameConfig.RUN_SPEED
+		var max_speed := GameConfig.CROUCH_SPEED if crouched else _run_speed()
 		var accel := GameConfig.GROUND_ACCEL if wish.length_squared() > 0.0001 else GameConfig.GROUND_DECEL
 		hv = hv.move_toward(wish * max_speed, accel * delta)
 		if in_jump:
@@ -210,7 +211,7 @@ func _move(delta: float) -> void:
 			jumped = true
 	elif wish.length_squared() > 0.0001:
 		# Strong Halo air control without bleeding momentum when you let go.
-		hv = hv.move_toward(wish * GameConfig.RUN_SPEED, GameConfig.AIR_ACCEL * delta)
+		hv = hv.move_toward(wish * _run_speed(), GameConfig.AIR_ACCEL * delta)
 
 	velocity.x = hv.x
 	velocity.z = hv.z
@@ -251,6 +252,14 @@ func _try_step_up(motion: Vector3) -> void:
 		apply_floor_snap()
 
 
+## Halo 2 runs faster forwards than sideways or backwards.
+func _run_speed() -> float:
+	if in_move.length_squared() < 0.0001:
+		return GameConfig.RUN_SPEED
+	var forward := maxf(in_move.normalized().y, 0.0)
+	return lerpf(GameConfig.STRAFE_SPEED, GameConfig.RUN_SPEED, forward)
+
+
 func _set_crouch(c: bool, on_floor: bool) -> void:
 	var dy := GameConfig.STAND_HEIGHT - GameConfig.CROUCH_HEIGHT
 	crouched = c
@@ -284,6 +293,7 @@ func _on_land(impact: float) -> void:
 		Sfx.play_3d(self, "land", global_position, -12.0, 0.1, 40.0)
 
 
+## The ragdoll is what you see; the hidden body just settles where it fell.
 func _corpse_physics(delta: float) -> void:
 	if global_position.y < GameConfig.KILL_Y:
 		return
@@ -291,7 +301,6 @@ func _corpse_physics(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, 0.0, 8.0 * delta)
 	velocity.y -= GameConfig.GRAVITY * delta
 	move_and_slide()
-	model.animate(self, delta)
 
 
 # --- Melee ----------------------------------------------------------------------------
@@ -380,7 +389,7 @@ func take_damage(amount: float, attacker: Soldier, cause: String, hit_pos: Vecto
 	if controller and controller.has_method("on_damaged"):
 		controller.on_damaged(amount, attacker, hit_pos)
 	if health <= 0.0:
-		die(attacker, cause, dir)
+		die(attacker, cause, dir, Ragdoll.fling_speed(cause, amount))
 
 
 func _fell_off_map() -> void:
@@ -390,7 +399,7 @@ func _fell_off_map() -> void:
 	die(killer, "fell", Vector3.DOWN)
 
 
-func die(killer: Soldier, cause: String, dir := Vector3.ZERO) -> void:
+func die(killer: Soldier, cause: String, dir := Vector3.ZERO, fling := 0.0) -> void:
 	if not alive:
 		return
 	alive = false
@@ -400,8 +409,9 @@ func die(killer: Soldier, cause: String, dir := Vector3.ZERO) -> void:
 	_lunge_target = null
 	collision_layer = 0
 	collision_mask = GameConfig.LAYER_WORLD
-	velocity = dir.normalized() * 2.0 if dir != Vector3.ZERO else Vector3.ZERO
-	model.play_death(dir)
+	ragdoll = Ragdoll.spawn(self, dir, fling, cause == "headshot")
+	model.visible = false
+	velocity = Vector3.ZERO
 	died.emit(self, killer, cause)
 
 
@@ -422,7 +432,8 @@ func respawn(xf: Transform3D) -> void:
 		model.set_weapon(loadout)
 	else:
 		weapon.reset()
-	model.reset_pose()
+	model.visible = true
+	ragdoll = null
 	spree = 0
 	last_attacker = null
 	last_damage_time = -100.0

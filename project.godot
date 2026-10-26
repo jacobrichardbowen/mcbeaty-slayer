@@ -23,6 +23,7 @@ window/stretch/aspect="expand"
 3d_physics/layer_2="soldiers"
 3d_physics/layer_3="pickups"
 3d_physics/layer_4="moving"
+3d_physics/layer_5="debris"
 
 [physics]
 

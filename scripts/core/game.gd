@@ -31,6 +31,7 @@ var _end_timer := 0.0
 func start() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	Fx.reset()
+	Sfx.warm_up()
 	_build_environment()
 	level = AscensionLevel.new()
 	level.name = "Ascension"

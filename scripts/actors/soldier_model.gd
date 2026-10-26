@@ -2,7 +2,8 @@ class_name SoldierModel
 extends Node3D
 ## Crude primitive soldier. Whites wear pale greatcoats and peaked caps; Reds
 ## wear red-dyed coats and the pointed budenovka with a red star. The upper
-## body pitches with aim, legs swing with speed, and death topples the body.
+## body pitches with aim and legs swing with speed. On death a Ragdoll copies
+## the body parts and the model hides.
 
 var team := GameConfig.TEAM_WHITE
 
@@ -17,9 +18,8 @@ var _gun_rest := Vector3.ZERO
 var _meshes: Array[MeshInstance3D] = []
 var _phase := 0.0
 var _kick := 0.0
-var _dead := false
-var _death_t := 0.0
-var _death_axis := Vector3.RIGHT
+var _parts := {}  # ragdoll part -> meshes drawn on it
+var coat := Color.WHITE
 var _first_person := false
 var _soldier: Soldier
 
@@ -29,7 +29,7 @@ func _ready() -> void:
 	# looks smooth on fast monitors.
 	_soldier = get_parent() as Soldier
 	top_level = true
-	var coat := Color(0.86, 0.86, 0.82) if team == GameConfig.TEAM_WHITE else Color(0.66, 0.13, 0.1)
+	coat = Color(0.86, 0.86, 0.82) if team == GameConfig.TEAM_WHITE else Color(0.66, 0.13, 0.1)
 	var trousers := Color(0.28, 0.3, 0.33) if team == GameConfig.TEAM_WHITE else Color(0.33, 0.28, 0.22)
 	var skin := Color(0.86, 0.68, 0.55)
 	var boot := Color(0.08, 0.07, 0.06)
@@ -41,24 +41,25 @@ func _ready() -> void:
 	_leg_l = _limb_pivot(Vector3(-0.12, 0.92, 0))
 	_leg_r = _limb_pivot(Vector3(0.12, 0.92, 0))
 	for leg in [_leg_l, _leg_r]:
-		_add(leg, _box(Vector3(0.17, 0.82, 0.2)), trousers, Vector3(0, -0.43, 0))
-		_add(leg, _box(Vector3(0.19, 0.16, 0.3)), boot, Vector3(0, -0.84, -0.05))
+		var part := "leg_l" if leg == _leg_l else "leg_r"
+		_add(leg, _box(Vector3(0.17, 0.82, 0.2)), trousers, Vector3(0, -0.43, 0), Vector3.ZERO, part)
+		_add(leg, _box(Vector3(0.19, 0.16, 0.3)), boot, Vector3(0, -0.84, -0.05), Vector3.ZERO, part)
 	# Greatcoat skirt.
-	_add(_body, _cyl(0.24, 0.34, 0.62), coat, Vector3(0, 0.86, 0))
+	_add(_body, _cyl(0.24, 0.34, 0.62), coat, Vector3(0, 0.86, 0), Vector3.ZERO, "torso")
 
 	_upper = Node3D.new()
 	_upper.position = Vector3(0, 1.15, 0)
 	_body.add_child(_upper)
-	_add(_upper, _box(Vector3(0.5, 0.52, 0.3)), coat, Vector3(0, 0.25, 0))
-	_add(_upper, _box(Vector3(0.52, 0.07, 0.32)), Color(0.25, 0.18, 0.1), Vector3(0, 0.02, 0))
-	_add(_upper, _sphere(0.13), skin, Vector3(0, 0.62, 0))
+	_add(_upper, _box(Vector3(0.5, 0.52, 0.3)), coat, Vector3(0, 0.25, 0), Vector3.ZERO, "torso")
+	_add(_upper, _box(Vector3(0.52, 0.07, 0.32)), Color(0.25, 0.18, 0.1), Vector3(0, 0.02, 0), Vector3.ZERO, "torso")
+	_add(_upper, _sphere(0.13), skin, Vector3(0, 0.62, 0), Vector3.ZERO, "head")
 	if team == GameConfig.TEAM_WHITE:
-		_add(_upper, _cyl(0.15, 0.14, 0.09), Color(0.95, 0.95, 0.93), Vector3(0, 0.74, 0))
-		_add(_upper, _cyl(0.142, 0.142, 0.04), Color(0.12, 0.12, 0.15), Vector3(0, 0.69, 0))
-		_add(_upper, _box(Vector3(0.2, 0.02, 0.1)), Color(0.05, 0.05, 0.05), Vector3(0, 0.69, -0.16))
+		_add(_upper, _cyl(0.15, 0.14, 0.09), Color(0.95, 0.95, 0.93), Vector3(0, 0.74, 0), Vector3.ZERO, "head")
+		_add(_upper, _cyl(0.142, 0.142, 0.04), Color(0.12, 0.12, 0.15), Vector3(0, 0.69, 0), Vector3.ZERO, "head")
+		_add(_upper, _box(Vector3(0.2, 0.02, 0.1)), Color(0.05, 0.05, 0.05), Vector3(0, 0.69, -0.16), Vector3.ZERO, "head")
 	else:
-		_add(_upper, _cyl(0.0, 0.16, 0.3), Color(0.42, 0.42, 0.34), Vector3(0, 0.82, 0))
-		_add(_upper, _box(Vector3(0.09, 0.09, 0.02)), Color(0.95, 0.1, 0.08), Vector3(0, 0.74, -0.14), Vector3(0, 0, PI / 4))
+		_add(_upper, _cyl(0.0, 0.16, 0.3), Color(0.42, 0.42, 0.34), Vector3(0, 0.82, 0), Vector3.ZERO, "head")
+		_add(_upper, _box(Vector3(0.09, 0.09, 0.02)), Color(0.95, 0.1, 0.08), Vector3(0, 0.74, -0.14), Vector3(0, 0, PI / 4), "head")
 	# Arms reach forward to a shotgun held at the hip.
 	var shotgun := Node3D.new()
 	shotgun.position = Vector3(0.12, 0.3, -0.32)
@@ -110,7 +111,7 @@ func _arm(from: Vector3, to: Vector3, color: Color) -> void:
 	mi.basis = Basis.looking_at((to - from).normalized(), Vector3.UP)
 
 
-func _add(parent: Node3D, mesh: Mesh, color: Color, pos: Vector3, rot := Vector3.ZERO) -> MeshInstance3D:
+func _add(parent: Node3D, mesh: Mesh, color: Color, pos: Vector3, rot := Vector3.ZERO, part := "") -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	var m := StandardMaterial3D.new()
@@ -121,6 +122,10 @@ func _add(parent: Node3D, mesh: Mesh, color: Color, pos: Vector3, rot := Vector3
 	mi.rotation = rot
 	parent.add_child(mi)
 	_meshes.append(mi)
+	if part != "":
+		if not _parts.has(part):
+			_parts[part] = []
+		_parts[part].append(mi)
 	return mi
 
 
@@ -169,30 +174,23 @@ func kick() -> void:
 	_kick = 1.0
 
 
-func play_death(dir: Vector3) -> void:
-	_dead = true
-	_death_t = 0.0
-	var flat := Vector3(dir.x, 0, dir.z)
-	if flat.length() < 0.1:
-		flat = global_transform.basis.z
-	# Topple away from the shot.
-	_death_axis = Vector3.UP.cross(flat.normalized()).normalized()
+## Meshes a ragdoll part copies, and the joint each part's layout is given in.
+func part_meshes(part: String) -> Array:
+	return _parts.get(part, [])
 
 
-func reset_pose() -> void:
-	_dead = false
-	_death_t = 0.0
-	_body.transform = Transform3D.IDENTITY
-	visible = true
+func part_frame(part: String) -> Node3D:
+	match part:
+		"torso":
+			return _body
+		"leg_l":
+			return _leg_l
+		"leg_r":
+			return _leg_r
+	return _upper  # head and arms
 
 
 func animate(s: Soldier, delta: float) -> void:
-	if _dead:
-		_death_t = minf(_death_t + delta * 2.6, 1.0)
-		var t := 1.0 - pow(1.0 - _death_t, 2.0)
-		var local_axis := global_transform.basis.inverse() * _death_axis
-		_body.transform = Transform3D(Basis(local_axis.normalized(), t * PI * 0.5), Vector3(0, 0.15 * t, 0))
-		return
 	rotation.y = s.look_yaw
 	_upper.rotation.x = clampf(s.look_pitch, -1.0, 1.0) * 0.8
 	_kick = maxf(0.0, _kick - delta * 6.0)
