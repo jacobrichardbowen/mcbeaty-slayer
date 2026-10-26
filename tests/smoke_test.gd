@@ -1,7 +1,7 @@
 extends SceneTree
 ## Headless smoke test: builds a match full of bots, checks the navmesh links
 ## every spawn to the Maxim, then simulates a few minutes of play.
-## Run: godot --headless --path . --fixed-fps 60 -s tests/smoke_test.gd [-- reds=N whites=N far]
+## Run: godot --headless --path . --fixed-fps 60 -s tests/smoke_test.gd [-- reds=N whites=N near|far]
 
 const SIM_SECONDS := 300.0
 
@@ -34,7 +34,9 @@ func _start() -> void:
 		elif arg.begins_with("whites="):
 			GameConfig.white_bots = int(arg.substr(7))
 		elif arg == "far":
-			GameConfig.player_starts_at_tower = false
+			GameConfig.bunker_start = GameConfig.TEAM_RED
+		elif arg == "near":
+			GameConfig.bunker_start = GameConfig.TEAM_WHITE
 	game = Game.new()
 	root.add_child(game)
 	game.start()
@@ -55,7 +57,7 @@ func _start() -> void:
 func _check_paths() -> void:
 	var map := game.level.nav_region.get_navigation_map()
 	var seat := game.turret.seat_position()
-	for side in ["bunker", "far"]:
+	for side in ["bunker", "far", "west", "east"]:
 		for xf in game.level.spawn_points[side]:
 			var from := game.ground_point((xf as Transform3D).origin)
 			var path := NavigationServer3D.map_get_path(map, from, seat, true)
@@ -100,7 +102,7 @@ func _check_respawns() -> void:
 		var was: bool = _was_alive.get(s, true)
 		if s.alive and not was and _t > 1.0:
 			_spawns += 1
-			var side := "bunker" if s.team == game.bunker.holder else "far"
+			var side := game.spawn_side(s.team)
 			var ok := false
 			for xf in game.level.spawn_points[side]:
 				var o: Vector3 = (xf as Transform3D).origin

@@ -71,6 +71,8 @@ func _draw_hud() -> void:
 		_canvas.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.75, 0.0, 0.0, 0.3 * pc.damage_flash))
 	if p.alive and p.health < 35.0:
 		_canvas.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.6, 0.0, 0.0, 0.08 + 0.06 * sin(_clock * 6.0)))
+	if p.alive and p.zoomed:
+		_draw_scope(sz)
 	if p.alive:
 		_draw_crosshair(sz, pc)
 		_draw_ammo(p)
@@ -88,6 +90,7 @@ func _draw_hud() -> void:
 		_text(Vector2(0, sz.y * 0.62), line, 26, BLUE, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
 		var respawn := "Respawn in %d" % ceili(game.respawn_left(p))
 		_text(Vector2(0, sz.y * 0.62 + 36), respawn, 20, DIM, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
+		_draw_loadout_choice(sz, p)
 	if Input.is_action_pressed("scoreboard") or game.over:
 		_draw_scoreboard(sz, p)
 	if _end_text != "":
@@ -102,6 +105,14 @@ func _draw_crosshair(sz: Vector2, pc: PlayerController) -> void:
 		for i in 4:
 			var d := Vector2.RIGHT.rotated(i * PI * 0.5)
 			_canvas.draw_line(c + d * 14.0, c + d * 24.0, col, 2.0)
+	elif game.player.weapon.kind == "rifle":
+		# Small ring plus four ticks that spread out with the rifle's bloom.
+		var half_fov := deg_to_rad(pc.camera.fov) * 0.5
+		var gap := 7.0 + tan(deg_to_rad(game.player.weapon.spread_deg())) / tan(half_fov) * sz.y * 0.5
+		_canvas.draw_arc(c, 5.0, 0.0, TAU, 20, col, 1.5)
+		for i in 4:
+			var d := Vector2.RIGHT.rotated(i * PI * 0.5)
+			_canvas.draw_line(c + d * gap, c + d * (gap + 9.0), col, 2.0)
 	else:
 		_canvas.draw_arc(c, 26.0, 0.0, TAU, 48, col, 2.0)
 		_canvas.draw_circle(c, 2.0, col)
@@ -121,18 +132,50 @@ func _draw_ammo(p: Soldier) -> void:
 		_text(Vector2(x0, y0 + 46), "Belt-fed  /  hold E to dismount", 14, DIM)
 		return
 	var w := p.weapon
-	for i in GameConfig.SG_MAG:
-		var r := Rect2(x0 + i * 12.0, y0, 8.0, 22.0)
+	var rifle := w.kind == "rifle"
+	for i in w.mag_size():
+		# Fat shells for the shotgun, slim pointed rounds for the rifle.
+		var r := Rect2(x0 + i * 12.0, y0, 8.0, 22.0) if not rifle else Rect2(x0 + i * 11.0, y0 + 4.0, 6.0, 22.0)
 		if i < w.mag:
 			_canvas.draw_rect(r, BLUE)
+			if rifle:
+				_canvas.draw_colored_polygon(PackedVector2Array([r.position, r.position + Vector2(r.size.x, 0), r.position + Vector2(r.size.x * 0.5, -5.0)]), BLUE)
 		else:
 			_canvas.draw_rect(r, DIM, false, 1.5)
 	_text(Vector2(x0, y0 + 52), str(w.reserve), 24, BLUE)
-	_text(Vector2(x0 + 48, y0 + 50), "SHOTGUN", 13, DIM)
+	_text(Vector2(x0 + 48, y0 + 50), w.display_name, 13, DIM)
 	if w.mag == 0 and w.reserve == 0:
 		_text(Vector2(x0, y0 + 76), "NO AMMO", 16, RED)
 	elif w.is_reloading():
 		_text(Vector2(x0, y0 + 76), "RELOADING", 14, DIM)
+
+
+## Halo 2 Battle Rifle-style scope: darkened edges and fine cross lines.
+func _draw_scope(sz: Vector2) -> void:
+	var c := sz * 0.5
+	var r := sz.y * 0.46
+	var edge := Color(0, 0, 0, 0.55)
+	_canvas.draw_arc(c, r + sz.x * 0.5, 0.0, TAU, 96, edge, sz.x, true)
+	_canvas.draw_arc(c, r, 0.0, TAU, 96, Color(0.55, 0.85, 1.0, 0.5), 2.0, true)
+	_canvas.draw_line(c - Vector2(r, 0), c - Vector2(14, 0), DIM, 1.0)
+	_canvas.draw_line(c + Vector2(14, 0), c + Vector2(r, 0), DIM, 1.0)
+	_canvas.draw_line(c + Vector2(0, 14), c + Vector2(0, r), DIM, 1.0)
+
+
+func _draw_loadout_choice(sz: Vector2, p: Soldier) -> void:
+	var y := sz.y * 0.62 + 84.0
+	_text(Vector2(0, y), "RESPAWN WITH", 13, DIM, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
+	var names := {"shotgun": "SHOTGUN", "rifle": "MOSIN-NAGANT"}
+	var keys: Array = PlayerController.LOADOUTS
+	var w := 230.0
+	var x0 := (sz.x - w * keys.size()) * 0.5
+	for i in keys.size():
+		var picked: bool = keys[i] == p.loadout
+		var r := Rect2(x0 + i * w + 8.0, y + 10.0, w - 16.0, 38.0)
+		_canvas.draw_rect(r, Color(0.55, 0.85, 1.0, 0.18 if picked else 0.05))
+		_canvas.draw_rect(r, BLUE if picked else DIM, false, 2.0 if picked else 1.0)
+		_text(Vector2(r.position.x, r.position.y + 26.0), "%d  %s" % [i + 1, names[keys[i]]], 17, Color.WHITE if picked else DIM, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+	_text(Vector2(0, y + 76.0), "Q / mouse wheel / Y to switch, or press 1 or 2", 13, DIM, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
 
 
 func _draw_health(sz: Vector2, p: Soldier) -> void:
@@ -219,7 +262,7 @@ func _draw_feed(sz: Vector2) -> void:
 
 func _draw_status(sz: Vector2) -> void:
 	var b := game.bunker
-	var text := "BUNKER: NOBODY"
+	var text := "BUNKER: UP FOR GRABS"
 	var col := DIM
 	if b.holder >= 0:
 		text = "BUNKER: %s" % GameConfig.TEAM_NAMES[b.holder].to_upper()

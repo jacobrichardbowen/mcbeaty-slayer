@@ -261,7 +261,7 @@ func _objective(delta: float) -> void:
 	_set_move(dir)
 	if dir != Vector3.ZERO:
 		_face_dir(dir, delta)
-	if s.weapon.mag < s.weapon.reserve and s.weapon.mag < GameConfig.SG_MAG:
+	if s.weapon.mag < s.weapon.reserve and s.weapon.mag < s.weapon.mag_size():
 		s.in_reload = true
 
 
@@ -349,7 +349,7 @@ func _friend_in_line(origin: Vector3, dir: Vector3, max_dist: float) -> bool:
 			continue
 		var to := o.chest_position() - origin
 		var d := to.length()
-		if d < max_dist + 1.0 and dir.angle_to(to) < maxf(deg_to_rad(GameConfig.SG_SPREAD + 3.0), atan(0.6 / maxf(d, 0.1))):
+		if d < max_dist + 1.0 and dir.angle_to(to) < maxf(deg_to_rad(s.weapon.spread_deg() + 3.0), atan(0.6 / maxf(d, 0.1))):
 			return true
 	return false
 

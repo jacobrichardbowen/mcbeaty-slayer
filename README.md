@@ -44,7 +44,10 @@ runs it, and `godot --path . -- --autostart` skips the lobby.
 
 ### Lobby options
 
-- **Bunker starts with**: your team (defend it) or the Reds (storm it).
+- **Bunker starts with**: nobody (the default: both teams start on neutral
+  ground and race for it), your team, or the Reds.
+- **Your weapon**: the shotgun or the Mosin-Nagant rifle. You can change it on
+  the death screen while you wait to respawn.
 - **Red bots** (1–16) and **White bots** (your side, 0–15): up to 16 a side.
 - **Score limit**: the 2004 variant used 250. The default here is 50.
 - Mouse sensitivity, field of view (Halo 2's is 70° horizontal at 4:3), and
@@ -60,6 +63,8 @@ runs it, and `godot --path . -- --autostart` skips the lobby.
 | Melee | F, V or middle click | B |
 | Reload | R | X |
 | Man / leave the Maxim | Hold E | Hold X |
+| Zoom (rifle) | Right click | R3 |
+| Pick respawn weapon (while dead) | Q, mouse wheel, 1 or 2 | Y |
 | Crouch (hides you from the motion tracker) | Ctrl or C | L3 |
 | Scoreboard | Tab | Back |
 | Pause | Esc | Start |
@@ -75,6 +80,12 @@ turret placed in one of the towers.
 - **Shotgun**: 12 shells, 15 pellets, shell-by-shell reload that you can cancel
   by firing. One shot kills out to about 6–7 m. The red reticle comes on
   within 10 m.
+- **Mosin-Nagant** (prototype): semi-automatic, one round per trigger pull,
+  5-round stripper clip, about 0.4 s between shots. Two body shots kill, one
+  headshot kills. One tight round instead of a pellet spray: a quarter of a
+  degree when standing still, growing when you fire fast, move or jump, and
+  halved when zoomed. Right click / R3 zooms 2x like Halo 2's Battle Rifle;
+  taking damage knocks you out of zoom.
 - **Maxim**: 600 rounds/min, infinite belt, 72° traverse either side, from
   22° up to 55° down. Third-person camera while you're on it, as with Halo 2
   vehicles. The gunner stays exposed from the sides and from the stairwell
@@ -88,9 +99,12 @@ if you want to tune the feel.
 
 ### The bunker decides where you spawn
 
-The team holding the **gun bunker** (the Big Tower) spawns around it. The
-other team spawns on the far side of the map: the south edge of the island,
-the Sniper Roost and the Landing Pad. Who holds it, checked every moment:
+A match starts with the bunker **up for grabs**. Whites start on the west side
+(Sniper Roost and west island) and Reds on the east (Landing Pad, Command
+Center and east island), the same distance from the tower. After that, the
+team holding the **gun bunker** (the Big Tower) spawns around it. The other
+team spawns on the far side of the map: the south edge of the island, the
+Sniper Roost and the Landing Pad. Who holds it, checked every moment:
 
 1. **Whoever is manning the Maxim** holds the bunker, at once.
 2. **Gun empty**: if one team outnumbers the holders *inside* the tower (its
@@ -154,8 +168,8 @@ Headless checks, run from the project folder (they need the class cache, so
 run `godot --headless --path . --import` once first):
 
 ```
-# Weapons, melee, jump height, fall damage, the turret's arc and lethality,
-# and every bunker-control and spawn rule
+# Weapons (shotgun and rifle), melee, jump height, fall damage, the turret's
+# arc and lethality, the neutral start, and every bunker-control and spawn rule
 godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 
 # A 300 s bot match: navmesh connectivity, a bot mans the Maxim, kills happen,
@@ -180,7 +194,9 @@ scripts/
   actors/soldier.gd         Halo-style movement, damage, melee, mounting
   actors/player_controller.gd  input, cameras, shotgun viewmodel
   actors/bot_brain.gd       rudimentary AI
+  weapons/weapon.gd         ammo/reload/cooldown shared by the hand-held guns
   weapons/shotgun.gd        pellets, falloff, shell reload
+  weapons/rifle.gd          semi-auto Mosin: bloom, headshots, clip reload, zoom
   weapons/maxim_turret.gd   the Tower of Power
   ui/hud.gd                 Halo 2-style HUD, tracker, kill feed
   fx/                       particles, tracers and synthesized sounds (no asset files)

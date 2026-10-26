@@ -48,6 +48,9 @@ func _start() -> void:
 		["pad", "fp", Vector3(20, 0, 10), Vector3(37, 0, 29)],
 		["scoreboard", "scoreboard", Vector3(0, 0, -20), Vector3(0, 8, -44)],
 		["capture", "capture", Vector3(0, 0, -20), Vector3(0, 8, -44)],
+		["rifle", "rifle", Vector3(4, 0, 12), Vector3(0, 6, -44)],
+		["rifle_zoom", "rifle_zoom", Vector3(4, 0, 12), Vector3(0, 8, -44)],
+		["respawn_pick", "dead", Vector3(4, 0, 12), Vector3(0, 6, -44)],
 	]
 
 
@@ -101,6 +104,22 @@ func _setup(shot: Array) -> void:
 			_place(p, shot[2], shot[3])
 			game.bunker.challenger = GameConfig.TEAM_RED
 			game.bunker.progress = 0.6
+		"rifle":
+			Input.action_release("scoreboard")
+			game.bunker.progress = 0.0
+			game.player_ctrl.camera.current = true
+			p.loadout = "rifle"
+			p.respawn(Transform3D(Basis.IDENTITY, game.ground_point(shot[2])))
+			_place(p, shot[2], shot[3])
+		"rifle_zoom":
+			game.player_ctrl.camera.current = true
+			_place(p, shot[2], shot[3])
+			p.zoomed = true
+		"dead":
+			p.zoomed = false
+			game.player_ctrl.camera.current = true
+			p.die(game.soldiers[1], "rifle")
+			game.hud.killed_by = game.soldiers[1].display_name
 		"turret_aim":
 			# Swing the gun toward a point on the island and fire a burst.
 			game.player_ctrl.camera.current = true

@@ -69,6 +69,34 @@ const SG_RELOAD_START := 0.35
 const SG_RELOAD_SHELL := 0.42
 const SG_RELOAD_END := 0.38
 const SG_AUTOAIM_RANGE := 10.0  # red reticle distance
+const SG_CRATE := 12  # shells per ammo crate
+
+# --- Mosin-Nagant (semi-auto for the prototype) -------------------------------
+const RF_MAG := 5  # one stripper clip
+const RF_START_RESERVE := 25
+const RF_MAX_RESERVE := 40
+const RF_CRATE := 10
+const RF_DAMAGE := 55.0  # two body shots kill
+const RF_HEADSHOT_MULT := 2.5  # one headshot kills
+const RF_FALLOFF_START := 45.0
+const RF_FALLOFF_END := 150.0
+const RF_FALLOFF_MIN := 0.7
+const RF_RANGE := 200.0
+const RF_FIRE_INTERVAL := 0.42
+const RF_RELOAD_START := 0.35
+const RF_RELOAD_CLIP := 1.3
+const RF_RELOAD_END := 0.4
+const RF_SPREAD := 0.25  # standing still
+const RF_MOVE_SPREAD := 1.0  # added at full run speed
+const RF_AIR_SPREAD := 2.5
+const RF_BLOOM_PER_SHOT := 0.8
+const RF_BLOOM_MAX := 3.0
+const RF_BLOOM_RECOVERY := 2.5  # degrees per second
+const RF_CROUCH_MULT := 0.6
+const RF_ZOOM := 2.0
+const RF_ZOOM_SPREAD_MULT := 0.5
+const RF_AUTOAIM_RANGE := 45.0
+const HEAD_HEIGHT := 0.32  # top of the body that counts as head
 
 # --- Maxim gun on the Big Tower ----------------------------------------------
 const MG_FIRE_INTERVAL := 0.1  # 600 rounds per minute
@@ -106,7 +134,8 @@ static var invert_y := false
 static var fov := 70.0  # Halo 2's horizontal FOV at 4:3
 static var red_bots := 4
 static var white_bots := 0
-static var player_starts_at_tower := true
+static var bunker_start := -1  # -1: nobody (fight for it), else the team that starts with it
+static var player_loadout := "shotgun"
 static var score_limit := 50
 
 

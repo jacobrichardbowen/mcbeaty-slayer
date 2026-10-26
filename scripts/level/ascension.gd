@@ -30,8 +30,10 @@ const DECK_Y := 14.0
 const TOWER_CENTER := Vector3(0, 0, -44)
 
 ## "bunker": around the Big Tower, used by whoever holds it. "far": the south
-## half of the map, used by the other team. 16 each, one per soldier.
-var spawn_points := {"bunker": [], "far": []}
+## half of the map, used by the other team. Until someone first takes the
+## bunker, Whites use "west" and Reds use "east": mirror-image spots the same
+## distance from the tower. 16 each, one per soldier.
+var spawn_points := {"bunker": [], "far": [], "west": [], "east": []}
 var turret_transform := Transform3D(Basis(Vector3.UP, PI), Vector3(0, DECK_Y, -34.3))
 var routes := {}
 var route_rally := {}
@@ -555,6 +557,18 @@ func _define_gameplay_points() -> void:
 			Vector3(-31, 0, 21.5), Vector3(-31, 0, 26), Vector3(-29, 0, 29.5), Vector3(-34.5, 0, 22),
 			Vector3(34, 0, 28), Vector3(38, 0, 33.5), Vector3(41.5, 0, 27), Vector3(37, 0, 22.5)]:
 		far.append(_xf(p, 0.0))
+	# Neutral start: Sniper Roost + west island for Whites, Landing Pad +
+	# Command Center + east island for Reds, everyone facing the tower.
+	for p in [Vector3(-31, 0, 21.5), Vector3(-31, 0, 26), Vector3(-29, 0, 29.5), Vector3(-34.5, 0, 22),
+			Vector3(-30, 0, 23.5), Vector3(-18, 0, 18.5), Vector3(-13, 0, 13), Vector3(-10, 0, 16),
+			Vector3(-7, 0, 19), Vector3(-21, 0, 13), Vector3(-25, 0, 1), Vector3(-25.5, 0, -2.5),
+			Vector3(-17, 0, 3), Vector3(-15, 0, 9), Vector3(-12.5, 0, 20.5), Vector3(-23, 0, 14)]:
+		spawn_points["west"].append(_xf_facing(p, TOWER_CENTER))
+	for p in [Vector3(34, 0, 28), Vector3(38, 0, 33.5), Vector3(41.5, 0, 27), Vector3(37, 0, 22.5),
+			Vector3(40, 0, 24.5), Vector3(18, 0, 18.5), Vector3(12, 0, 14), Vector3(12, 0, 19),
+			Vector3(6, 0, 19.5), Vector3(19.5, 0, 14.5), Vector3(25, 0, 1), Vector3(25.5, 0, -2.5),
+			Vector3(17, 0, 3), Vector3(20, 0, 3.5), Vector3(12.5, 0, 20.5), Vector3(23, 0, 14)]:
+		spawn_points["east"].append(_xf_facing(p, TOWER_CENTER))
 	routes = {
 		"west": [Vector3(-26.0, 0, -2.0), Vector3(-30.5, -3, -13), Vector3(-30.5, -3, -28), Vector3(-18, 0, -41), Vector3(-8.2, 0, -49.0)],
 		"east": [Vector3(26.0, 0, -2.5), Vector3(30.5, -3, -13), Vector3(30.5, -3, -28), Vector3(18, 0, -41), Vector3(8.2, 0, -39.1)],
@@ -618,6 +632,10 @@ func _v(p: Vector2, y := 0.0) -> Vector3:
 
 func _xf(p: Vector3, yaw: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, yaw), p)
+
+
+func _xf_facing(p: Vector3, target: Vector3) -> Transform3D:
+	return _xf(p, atan2(-(target.x - p.x), -(target.z - p.z)))
 
 
 func _ngon(center: Vector2, radius: float, sides: int, rot := 0.0) -> PackedVector2Array:

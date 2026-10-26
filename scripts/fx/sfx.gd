@@ -15,6 +15,14 @@ static func stream(sound: String) -> AudioStreamWAV:
 	match sound:
 		"shotgun":
 			s = _mix([_noise(0.9, 0.11, 3200.0, 1.0), _tone(52.0, 0.9, 0.16, 0.9), _noise(0.02, 0.004, 9000.0, 0.6)])
+		"rifle":
+			# Sharp supersonic crack, a short body, then a rolling echo off the peaks.
+			s = _mix([_noise(0.03, 0.006, 9000.0, 0.9), _noise(0.25, 0.045, 3800.0, 1.0),
+				_tone(95.0, 0.25, 0.07, 0.7), _delay(_noise(0.9, 0.28, 900.0, 0.22), 0.09)])
+		"bolt":
+			s = _mix([_click(0.0, 0.6), _click(0.09, 0.5), _tone(520.0, 0.04, 0.01, 0.2)])
+		"clip":
+			s = _mix([_click(0.0, 0.7), _noise(0.12, 0.03, 2500.0, 0.3), _click(0.1, 0.6)])
 		"maxim":
 			s = _mix([_noise(0.22, 0.035, 2600.0, 1.0), _tone(70.0, 0.22, 0.05, 0.7)])
 		"pump":

@@ -10,8 +10,10 @@ var _body: Node3D
 var _upper: Node3D
 var _leg_l: Node3D
 var _leg_r: Node3D
-var _gun: Node3D
+var _gun: Node3D  # the gun currently held
 var _muzzle: Node3D
+var _guns := {}  # kind -> [node, muzzle, rest position]
+var _gun_rest := Vector3.ZERO
 var _meshes: Array[MeshInstance3D] = []
 var _phase := 0.0
 var _kick := 0.0
@@ -58,18 +60,42 @@ func _ready() -> void:
 		_add(_upper, _cyl(0.0, 0.16, 0.3), Color(0.42, 0.42, 0.34), Vector3(0, 0.82, 0))
 		_add(_upper, _box(Vector3(0.09, 0.09, 0.02)), Color(0.95, 0.1, 0.08), Vector3(0, 0.74, -0.14), Vector3(0, 0, PI / 4))
 	# Arms reach forward to a shotgun held at the hip.
-	_gun = Node3D.new()
-	_gun.position = Vector3(0.12, 0.3, -0.32)
-	_upper.add_child(_gun)
-	_add(_gun, _box(Vector3(0.07, 0.09, 0.32)), steel, Vector3(0, 0, 0))
-	_add(_gun, _cyl(0.025, 0.025, 0.55), steel, Vector3(0, 0.02, -0.42), Vector3(PI / 2, 0, 0))
-	_add(_gun, _box(Vector3(0.06, 0.06, 0.16)), wood, Vector3(0, -0.035, -0.32))
-	_add(_gun, _box(Vector3(0.055, 0.1, 0.28)), wood, Vector3(0, -0.04, 0.28))
-	_muzzle = Node3D.new()
-	_muzzle.position = Vector3(0, 0.02, -0.72)
-	_gun.add_child(_muzzle)
+	var shotgun := Node3D.new()
+	shotgun.position = Vector3(0.12, 0.3, -0.32)
+	_upper.add_child(shotgun)
+	_add(shotgun, _box(Vector3(0.07, 0.09, 0.32)), steel, Vector3(0, 0, 0))
+	_add(shotgun, _cyl(0.025, 0.025, 0.55), steel, Vector3(0, 0.02, -0.42), Vector3(PI / 2, 0, 0))
+	_add(shotgun, _box(Vector3(0.06, 0.06, 0.16)), wood, Vector3(0, -0.035, -0.32))
+	_add(shotgun, _box(Vector3(0.055, 0.1, 0.28)), wood, Vector3(0, -0.04, 0.28))
+	_guns["shotgun"] = [shotgun, _marker(shotgun, Vector3(0, 0.02, -0.72)), shotgun.position]
+	# Mosin: long wooden stock, thin barrel, bolt handle.
+	var rifle := Node3D.new()
+	rifle.position = Vector3(0.12, 0.31, -0.3)
+	_upper.add_child(rifle)
+	_add(rifle, _box(Vector3(0.055, 0.08, 1.0)), wood, Vector3(0, -0.02, -0.05))
+	_add(rifle, _cyl(0.016, 0.016, 0.42), steel, Vector3(0, 0.02, -0.72), Vector3(PI / 2, 0, 0))
+	_add(rifle, _box(Vector3(0.05, 0.05, 0.2)), steel, Vector3(0, 0.03, 0.08))
+	_add(rifle, _cyl(0.012, 0.012, 0.09), steel, Vector3(0.05, 0.03, 0.14), Vector3(0, 0, PI / 2))
+	_guns["rifle"] = [rifle, _marker(rifle, Vector3(0, 0.02, -0.95)), rifle.position]
+	set_weapon("shotgun")
 	_arm(Vector3(0.27, 0.42, 0.0), Vector3(0.14, 0.27, -0.16), coat)
 	_arm(Vector3(-0.27, 0.42, 0.0), Vector3(0.1, 0.28, -0.62), coat)
+
+
+func _marker(parent: Node3D, pos: Vector3) -> Node3D:
+	var n := Node3D.new()
+	n.position = pos
+	parent.add_child(n)
+	return n
+
+
+func set_weapon(kind: String) -> void:
+	for k in _guns:
+		(_guns[k][0] as Node3D).visible = k == kind
+	var g: Array = _guns.get(kind, _guns["shotgun"])
+	_gun = g[0]
+	_muzzle = g[1]
+	_gun_rest = g[2]
 
 
 func _limb_pivot(pos: Vector3) -> Node3D:
@@ -170,7 +196,7 @@ func animate(s: Soldier, delta: float) -> void:
 	rotation.y = s.look_yaw
 	_upper.rotation.x = clampf(s.look_pitch, -1.0, 1.0) * 0.8
 	_kick = maxf(0.0, _kick - delta * 6.0)
-	_gun.position.z = -0.32 + _kick * 0.08
+	_gun.position.z = _gun_rest.z + _kick * 0.08
 	var speed := s.horizontal_speed()
 	var swing := 0.0
 	if s.is_on_floor() and speed > 0.3 and not s.turret:

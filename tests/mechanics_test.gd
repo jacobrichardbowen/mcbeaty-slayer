@@ -1,7 +1,8 @@
 extends SceneTree
 ## Checks the core Tower of Power numbers in a live world (no bots):
 ## shotgun range, melee, fall damage, jump height, turret arc and lethality,
-## and the bunker-control rules that decide where each team spawns.
+## the bunker-control rules that decide where each team spawns, the neutral
+## start, and the Mosin rifle and respawn weapon choice.
 ## Run: godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 
 var game: Game
@@ -72,6 +73,10 @@ func _physics_process(_delta: float) -> bool:
 	var d := _dummy
 	match _step:
 		0:
+			if _frames == 2:
+				# Nobody holds the bunker yet: each team starts on its own neutral side.
+				_expect(game.bunker.holder == -1, "the match starts with the bunker up for grabs")
+				_expect(_near_spawn(p, "west") and _near_spawn(d, "east"), "Whites start west and Reds east")
 			if _frames > 30:
 				_data["kills5"] = 0
 				_data["trial"] = 0
@@ -230,7 +235,53 @@ func _physics_process(_delta: float) -> bool:
 				_expect(p.alive and _near_spawn(p, "far"), "Whites respawn on the far side (%s)" % p.global_position)
 				_expect(d.alive and _near_spawn(d, "bunker"), "Reds respawn at the bunker (%s)" % d.global_position)
 				_next()
-		19:
+		19:  # Respawning with the rifle picked swaps the gun.
+			if _frames == 1:
+				p.loadout = "rifle"
+				p.respawn(Transform3D(Basis.IDENTITY, game.ground_point(Vector3(3, 0, 17.5))))
+				_expect(p.weapon is Rifle and p.weapon.mag == GameConfig.RF_MAG, "respawning with the rifle chosen gives the Mosin")
+				_place(d, Vector3(3, 0, -34), 0.0)
+			elif _frames == 3:
+				_aim(p, d.chest_position())
+				p.in_fire = true
+			elif _frames == TPS:
+				# Held the trigger for a second: semi-auto fires once.
+				_expect(p.weapon.mag == GameConfig.RF_MAG - 1, "semi-auto: holding the trigger fires one round (%d left)" % p.weapon.mag)
+				_expect(d.alive and d.health < GameConfig.MAX_HEALTH, "one body shot at ~50 m wounds but doesn't kill (health %.0f)" % d.health)
+				p.in_fire = false
+			elif _frames == TPS + 2:
+				p.in_fire = true
+			elif _frames == TPS + 3:
+				p.in_fire = false
+			elif _frames == TPS + 20:
+				_expect(not d.alive, "two rifle body shots kill")
+				_next()
+		20:  # Zoomed headshot at ~50 m kills in one.
+			if _frames == 1:
+				_place(d, Vector3(3, 0, -34), 0.0)
+				p.zoomed = true
+			elif _frames == TPS:
+				_aim(p, d.global_position + Vector3(0, GameConfig.STAND_HEIGHT - 0.14, 0))
+				p.in_fire = true
+			elif _frames == TPS + 1:
+				p.in_fire = false
+			elif _frames == TPS + 20:
+				_expect(not d.alive, "one zoomed rifle headshot kills")
+				p.zoomed = false
+				_next()
+		21:  # Bloom: firing fast and moving widens the rifle's spread.
+			if _frames == 1:
+				var still: float = p.weapon.spread_deg()
+				for i in 3:
+					(p.weapon as Rifle)._bloom = minf((p.weapon as Rifle)._bloom + GameConfig.RF_BLOOM_PER_SHOT, GameConfig.RF_BLOOM_MAX)
+				_expect(p.weapon.spread_deg() > still * 3.0, "rapid fire blooms the rifle (%.2f -> %.2f deg)" % [still, p.weapon.spread_deg()])
+			elif _frames == TPS * 2:
+				_expect(p.weapon.spread_deg() < GameConfig.RF_SPREAD * 1.5, "bloom settles back down")
+				p.loadout = "shotgun"
+				p.respawn(Transform3D(Basis.IDENTITY, game.ground_point(Vector3(3, 0, 17.5))))
+				_expect(p.weapon is Shotgun, "choosing the shotgun again swaps back")
+				_next()
+		22:
 			print("MECHANICS TEST ", "PASSED" if _failures.is_empty() else "FAILED")
 			quit(0 if _failures.is_empty() else 1)
 			return true

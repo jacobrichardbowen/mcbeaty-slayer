@@ -1,58 +1,51 @@
 class_name Shotgun
-extends RefCounted
+extends Weapon
 ## Halo 2-style shotgun: hitscan pellets in a cone, damage falloff, and a
 ## shell-by-shell reload you can cancel by pulling the trigger.
 
-enum State { READY, COOLDOWN, RELOAD_START, RELOAD_SHELL, RELOAD_END }
-
-var soldier: Soldier
-var mag := GameConfig.SG_MAG
-var reserve := GameConfig.SG_START_RESERVE
-var state := State.READY
-var timer := 0.0
-var last_shot_time := -100.0
-var _dry_cd := 0.0
 var _pump_pending := false
 
 
 func _init(owner_soldier: Soldier) -> void:
-	soldier = owner_soldier
+	super(owner_soldier)
+	kind = "shotgun"
+	display_name = "SHOTGUN"
 
 
-func reset() -> void:
-	mag = GameConfig.SG_MAG
-	reserve = GameConfig.SG_START_RESERVE
-	state = State.READY
-	timer = 0.0
+func mag_size() -> int:
+	return GameConfig.SG_MAG
 
 
-func is_reloading() -> bool:
-	return state == State.RELOAD_START or state == State.RELOAD_SHELL or state == State.RELOAD_END
+func start_reserve() -> int:
+	return GameConfig.SG_START_RESERVE
 
 
-## Ammo you can still take from a pickup.
-func ammo_room() -> int:
-	return GameConfig.SG_MAX_RESERVE - reserve
+func max_reserve() -> int:
+	return GameConfig.SG_MAX_RESERVE
 
 
-func add_ammo(amount: int) -> int:
-	var taken := mini(amount, ammo_room())
-	reserve += taken
-	return taken
+func fire_interval() -> float:
+	return GameConfig.SG_FIRE_INTERVAL
 
 
-## Melee cancels a reload and briefly blocks firing.
-func interrupt(block_time: float) -> void:
-	if is_reloading():
-		state = State.COOLDOWN
-	if state == State.READY:
-		state = State.COOLDOWN
-	timer = maxf(timer, block_time)
+func autoaim_range() -> float:
+	return GameConfig.SG_AUTOAIM_RANGE
+
+
+func crate_ammo() -> int:
+	return GameConfig.SG_CRATE
+
+
+func spread_deg() -> float:
+	return GameConfig.SG_SPREAD
+
+
+func fire_sound() -> String:
+	return "shotgun"
 
 
 func update(delta: float) -> void:
-	timer = maxf(0.0, timer - delta)
-	_dry_cd = maxf(0.0, _dry_cd - delta)
+	_tick_timers(delta)
 	if _pump_pending and soldier.now() - last_shot_time > 0.32:
 		_pump_pending = false
 		soldier.weapon_sound("pump", -5.0)
@@ -66,11 +59,11 @@ func update(delta: float) -> void:
 				timer = GameConfig.SG_RELOAD_SHELL
 		State.RELOAD_SHELL:
 			if timer <= 0.0:
-				if reserve > 0 and mag < GameConfig.SG_MAG:
+				if reserve > 0 and mag < mag_size():
 					mag += 1
 					reserve -= 1
 					soldier.weapon_sound("shell", -6.0)
-				if mag >= GameConfig.SG_MAG or reserve <= 0:
+				if mag >= mag_size() or reserve <= 0:
 					state = State.RELOAD_END
 					timer = GameConfig.SG_RELOAD_END
 				else:
@@ -89,10 +82,9 @@ func update(delta: float) -> void:
 				_fire()
 			elif reserve > 0:
 				_start_reload()
-			elif _dry_cd <= 0.0:
-				_dry_cd = 0.5
-				soldier.weapon_sound("dry", -8.0)
-	if soldier.in_reload and state == State.READY and mag < GameConfig.SG_MAG and reserve > 0:
+			else:
+				_dry_fire()
+	if soldier.in_reload and state == State.READY and mag < mag_size() and reserve > 0:
 		_start_reload()
 	if state == State.READY and mag == 0 and reserve > 0:
 		_start_reload()
@@ -111,27 +103,17 @@ static func falloff(dist: float) -> float:
 
 
 func _fire() -> void:
-	mag -= 1
-	state = State.COOLDOWN
-	timer = GameConfig.SG_FIRE_INTERVAL
-	last_shot_time = soldier.now()
-	soldier.last_fire_time = last_shot_time
+	_begin_shot()
 	_pump_pending = true
 	var origin := soldier.eye_position()
 	var fwd := soldier.aim_direction()
-	var basis := Basis.looking_at(fwd, Vector3.UP)
-	var space := soldier.get_world_3d().direct_space_state
-	var exclude: Array[RID] = [soldier.get_rid()]
 	var hits := {}
 	var marks := 0
 	var fx_root := soldier.fx_root()
 	var spread := deg_to_rad(GameConfig.SG_SPREAD)
 	for i in GameConfig.SG_PELLETS:
-		var ang := spread * sqrt(randf())
-		var rot := randf() * TAU
-		var dir := basis * Vector3(sin(ang) * cos(rot), sin(ang) * sin(rot), -cos(ang))
-		var q := PhysicsRayQueryParameters3D.create(origin, origin + dir * GameConfig.SG_RANGE, GameConfig.MASK_SHOT, exclude)
-		var r := space.intersect_ray(q)
+		var dir := cone_direction(fwd, spread)
+		var r := _cast(origin, dir, GameConfig.SG_RANGE)
 		if r.is_empty():
 			continue
 		var pos: Vector3 = r.position

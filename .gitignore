@@ -5,3 +5,7 @@
 
 # Exported game builds
 build/
+
+# Research notes and reports (sent separately)
+research_notes/
+reports/

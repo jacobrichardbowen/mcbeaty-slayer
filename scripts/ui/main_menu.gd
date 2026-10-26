@@ -4,11 +4,11 @@ extends CanvasLayer
 
 signal start_requested
 
-const CONTROLS := """Mouse / keyboard: WASD move, mouse look, Left click fire, Space jump,
-Ctrl or C crouch, F / V / middle click melee, R reload, hold E man the Maxim,
-Tab scoreboard, Esc pause, F11 or Alt+Enter fullscreen.
-Gamepad (Halo 2 layout): sticks move/look, RT fire, A jump, B melee,
-X reload / hold X to man the Maxim, L3 crouch, Back scoreboard, Start pause."""
+const CONTROLS := """Mouse / keyboard: WASD move, mouse look, Left click fire, Right click zoom (rifle),
+Space jump, Ctrl or C crouch, F / V / middle click melee, R reload, hold E man the Maxim,
+Tab scoreboard, Esc pause, F11 fullscreen. While dead: Q, wheel, 1 or 2 picks your weapon.
+Gamepad (Halo 2 layout): sticks move/look, RT fire, R3 zoom, A jump, B melee,
+X reload / hold X to man the Maxim, L3 crouch, Y switch weapon (while dead), Back scoreboard."""
 
 
 func _ready() -> void:
@@ -45,11 +45,18 @@ func _ready() -> void:
 	box.add_child(grid)
 
 	var side := OptionButton.new()
+	side.add_item("Nobody: both sides fight for it")
 	side.add_item("Whites (you): defend it")
 	side.add_item("Reds: you storm it")
-	side.selected = 0 if GameConfig.player_starts_at_tower else 1
-	side.item_selected.connect(func(i: int) -> void: GameConfig.player_starts_at_tower = i == 0)
+	side.selected = GameConfig.bunker_start + 1
+	side.item_selected.connect(func(i: int) -> void: GameConfig.bunker_start = i - 1)
 	_row(grid, "Bunker starts with", side)
+	var gun := OptionButton.new()
+	gun.add_item("Shotgun")
+	gun.add_item("Mosin-Nagant (semi-auto rifle)")
+	gun.selected = 1 if GameConfig.player_loadout == "rifle" else 0
+	gun.item_selected.connect(func(i: int) -> void: GameConfig.player_loadout = "rifle" if i == 1 else "shotgun")
+	_row(grid, "Your weapon", gun)
 	var most := GameConfig.MAX_PER_TEAM
 	_row(grid, "Red bots", _spin(1, most, GameConfig.red_bots, func(v: float) -> void: GameConfig.red_bots = int(v)))
 	_row(grid, "White bots (your side)", _spin(0, most - 1, GameConfig.white_bots, func(v: float) -> void: GameConfig.white_bots = int(v)))

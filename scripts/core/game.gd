@@ -44,12 +44,12 @@ func start() -> void:
 	turret.transform = level.turret_transform
 	add_child(turret)
 	turret.gunner_changed.connect(_on_gunner_changed)
-	var start_holder := GameConfig.TEAM_WHITE if GameConfig.player_starts_at_tower else GameConfig.TEAM_RED
+	var start_holder := GameConfig.bunker_start
 	bunker = BunkerControl.new(start_holder)
 	bunker.holder_changed.connect(_on_holder_changed)
 	level.set_flag_team(start_holder)
 	for p in level.ammo_points:
-		_add_pickup(ground_point(p), 12, false)
+		_add_pickup(ground_point(p), 0, false)
 	for tp in level.teleporters:
 		var t := Teleporter.new()
 		t.destination = tp["to"]
@@ -74,6 +74,8 @@ func start() -> void:
 	add_child(pause_menu)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	var goal := "Hold the bunker" if bunker.holder == player.team else "Take the bunker"
+	if bunker.holder < 0:
+		goal = "The bunker is up for grabs: take it"
 	hud.announce("Tower of Power")
 	hud.feed("%s. First to %d kills." % [goal, GameConfig.score_limit], GameConfig.TEAM_COLORS[0])
 	hud.feed("Whoever holds the bunker spawns there.", Color(0.8, 0.8, 0.8))
@@ -169,6 +171,8 @@ func _build_environment() -> void:
 func _spawn_soldier(team: int, soldier_name: String, is_player: bool) -> void:
 	var s := Soldier.new()
 	s.setup(self, team, soldier_name, is_player)
+	if is_player:
+		s.loadout = GameConfig.player_loadout
 	_soldier_root.add_child(s)
 	s.died.connect(_on_soldier_died)
 	soldiers.append(s)
@@ -185,18 +189,29 @@ func _spawn_soldier(team: int, soldier_name: String, is_player: bool) -> void:
 	s.respawn(_choose_spawn(team))
 
 
-func _add_pickup(pos: Vector3, amount: int, dropped: bool) -> void:
+func _add_pickup(pos: Vector3, amount: int, dropped: bool, kind := "shotgun") -> void:
 	var p := AmmoPickup.new()
 	p.amount = amount
 	p.dropped = dropped
+	p.kind = kind
 	p.position = pos
 	add_child(p)
 
 
-## The bunker holders spawn at the bunker, everyone else on the far side;
-## within a side, pick a spot away from living enemies.
+## The bunker holders spawn at the bunker, everyone else on the far side.
+## Before anyone has taken it, each team has its own neutral side. Within a
+## side, pick a spot away from living enemies.
 func _choose_spawn(team: int) -> Transform3D:
-	var side := "bunker" if team == bunker.holder else "far"
+	return _pick_spawn(team, spawn_side(team))
+
+
+func spawn_side(team: int) -> String:
+	if bunker.holder < 0:
+		return "west" if team == GameConfig.TEAM_WHITE else "east"
+	return "bunker" if team == bunker.holder else "far"
+
+
+func _pick_spawn(team: int, side: String) -> Transform3D:
 	var pts: Array = level.spawn_points[side]
 	var scored: Array = []
 	for xf in pts:
@@ -240,7 +255,8 @@ func _on_soldier_died(victim: Soldier, killer: Soldier, cause: String) -> void:
 		scores[killer.team] += 1
 		killer.kills += 1
 		killer.spree += 1
-		var verb: String = {"melee": "beat down", "maxim": "mowed down", "fell": "knocked off"}.get(cause, "killed")
+		var verb: String = {"melee": "beat down", "maxim": "mowed down", "fell": "knocked off",
+			"rifle": "shot", "headshot": "headshot"}.get(cause, "killed")
 		msg = "%s %s %s" % [killer.display_name, verb, victim.display_name]
 		color = GameConfig.TEAM_COLORS[killer.team]
 		_track_medals(killer)
@@ -250,7 +266,7 @@ func _on_soldier_died(victim: Soldier, killer: Soldier, cause: String) -> void:
 	_respawn_at[victim] = time + GameConfig.RESPAWN_TIME
 	var ammo := victim.weapon.mag + victim.weapon.reserve
 	if ammo > 0 and cause != "fell":
-		_add_pickup(ground_point(victim.global_position), mini(ammo, 24), true)
+		_add_pickup(ground_point(victim.global_position), mini(ammo, victim.weapon.max_reserve() / 2), true, victim.weapon.kind)
 	for t in 2:
 		if scores[t] >= GameConfig.score_limit:
 			_end_match(t)

@@ -28,7 +28,10 @@ var health := GameConfig.MAX_HEALTH
 var alive := true
 var crouched := false
 var eye_height := GameConfig.STAND_EYE
-var weapon: Shotgun
+var weapon: Weapon
+## Gun to carry from the next spawn on ("shotgun" or "rifle").
+var loadout := "shotgun"
+var zoomed := false
 var turret: MaximTurret = null
 var model: SoldierModel
 var kills := 0
@@ -81,7 +84,8 @@ func _ready() -> void:
 	model = SoldierModel.new()
 	model.team = team
 	add_child(model)
-	weapon = Shotgun.new(self)
+	weapon = make_weapon(loadout)
+	model.set_weapon(loadout)
 	snap_interpolation()
 
 
@@ -412,7 +416,12 @@ func respawn(xf: Transform3D) -> void:
 	velocity = Vector3.ZERO
 	collision_layer = GameConfig.LAYER_SOLDIER
 	collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_SOLDIER | GameConfig.LAYER_MOVING
-	weapon.reset()
+	zoomed = false
+	if weapon.kind != loadout:
+		weapon = make_weapon(loadout)
+		model.set_weapon(loadout)
+	else:
+		weapon.reset()
 	model.reset_pose()
 	spree = 0
 	last_attacker = null
@@ -433,12 +442,30 @@ func weapon_sound(sound: String, volume_db := 0.0) -> void:
 		Sfx.play_3d(self, sound, eye_position(), volume_db, 0.06, 40.0)
 
 
+func make_weapon(kind: String) -> Weapon:
+	return Rifle.new(self) if kind == "rifle" else Shotgun.new(self)
+
+
+## Where shots appear to leave from: the viewmodel for the player.
+func muzzle_position() -> Vector3:
+	if controller and controller.has_method("muzzle_position"):
+		return controller.muzzle_position()
+	return model.muzzle_position()
+
+
+## Hits in the top ~third of a metre of the body count as headshots.
+func is_head_hit(pos: Vector3) -> bool:
+	var h := GameConfig.CROUCH_HEIGHT if crouched else GameConfig.STAND_HEIGHT
+	return pos.y > global_position.y + h - GameConfig.HEAD_HEIGHT
+
+
 func on_weapon_fired() -> void:
 	model.kick()
+	var sound := weapon.fire_sound()
 	if is_player:
-		Sfx.play_2d(self, "shotgun", -2.0, 0.05)
+		Sfx.play_2d(self, sound, -2.0, 0.05)
 	else:
-		Sfx.play_3d(self, "shotgun", eye_position(), 3.0, 0.05, 200.0)
+		Sfx.play_3d(self, sound, eye_position(), 3.0, 0.05, 220.0)
 		Fx.flash(fx_root(), model.muzzle_position(), 4.0, 0.4)
 	if controller and controller.has_method("on_weapon_fired"):
 		controller.on_weapon_fired()

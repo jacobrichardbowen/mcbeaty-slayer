@@ -2,7 +2,8 @@ class_name InputSetup
 extends RefCounted
 ## Registers the input map at startup so bindings live in code.
 ## Keyboard/mouse follows Halo PC habits; the pad follows the Halo 2 Xbox
-## layout (A jump, B melee, X reload / hold to man the gun, RT fire, L3 crouch).
+## layout (A jump, B melee, X reload / hold to man the gun, RT fire, L3 crouch,
+## R3 zoom, Y switch weapon).
 
 
 static func register() -> void:
@@ -22,8 +23,12 @@ static func register() -> void:
 	alt_enter.physical_keycode = KEY_ENTER
 	alt_enter.alt_pressed = true
 	InputMap.action_add_event("toggle_fullscreen", alt_enter)
+	_keys("switch_weapon", [KEY_Q])
+	_keys("weapon_1", [KEY_1])
+	_keys("weapon_2", [KEY_2])
 	_mouse("fire", MOUSE_BUTTON_LEFT)
 	_mouse("melee", MOUSE_BUTTON_MIDDLE)
+	_mouse("zoom", MOUSE_BUTTON_RIGHT)
 
 	_axis("move_left", JOY_AXIS_LEFT_X, -1.0)
 	_axis("move_right", JOY_AXIS_LEFT_X, 1.0)
@@ -41,6 +46,8 @@ static func register() -> void:
 	_button("crouch", JOY_BUTTON_LEFT_STICK)
 	_button("pause", JOY_BUTTON_START)
 	_button("scoreboard", JOY_BUTTON_BACK)
+	_button("zoom", JOY_BUTTON_RIGHT_STICK)
+	_button("switch_weapon", JOY_BUTTON_Y)
 
 
 static func _ensure(action: String) -> void:
