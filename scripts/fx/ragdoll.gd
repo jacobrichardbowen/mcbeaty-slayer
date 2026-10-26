@@ -30,6 +30,8 @@ var _visuals := {}  # part -> Node3D, drawn between physics ticks
 var _prev := {}
 var _curr := {}
 var _age := 0.0
+var _still := 0.0
+var _frozen := false
 
 
 ## Swaps a soldier who just died for a body thrown at `speed` along `dir`.
@@ -169,6 +171,23 @@ func _physics_process(delta: float) -> void:
 		_curr[part] = (_bodies[part] as RigidBody3D).global_transform
 	if _age > GameConfig.RAGDOLL_LIFETIME or torso_position().y < GameConfig.KILL_Y:
 		queue_free()
+	elif not _frozen:
+		_settle(delta)
+
+
+## Godot's joints never quite come to rest, so a body that has stopped moving
+## is frozen in place: no twitching corpses, and no physics cost.
+func _settle(delta: float) -> void:
+	var fastest := 0.0
+	for b: RigidBody3D in _bodies.values():
+		fastest = maxf(fastest, b.linear_velocity.length())
+	_still = _still + delta if fastest < 0.6 and _age > 1.0 else 0.0
+	if _still < 0.4 and _age < 4.0:
+		return
+	_frozen = true
+	for b: RigidBody3D in _bodies.values():
+		b.freeze = true
+		b.collision_mask = 0
 
 
 func _process(_delta: float) -> void:
