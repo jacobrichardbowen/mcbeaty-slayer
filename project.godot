@@ -4,7 +4,8 @@ config_version=5
 
 [application]
 
-config/name="Mcbeaty Slayer"
+config/name="Tower of Power"
+config/version="005"
 config/description="Tower of Power on Ascension: a Halo 2-feel prototype (Whites vs Reds)."
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")

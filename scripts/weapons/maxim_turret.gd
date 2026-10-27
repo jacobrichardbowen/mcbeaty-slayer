@@ -1,8 +1,10 @@
 class_name MaximTurret
 extends Node3D
 ## The Tower of Power: a Maxim M1910 on a Sokolov mount at the front of the
-## Big Tower deck. Infinite ammo, 600 rpm, limited traverse. The gunner stays
-## exposed from the sides and from the stair hole behind them.
+## Big Tower deck. Infinite ammo, 585 rpm, limited traverse. The gunner stays
+## exposed from the sides and from the stair hole behind them. A burst plays
+## one seamless recorded loop, pitched down, and ends with the last round
+## and its echo on the beat the next round would have fired.
 
 signal gunner_changed(soldier: Soldier)
 
@@ -15,10 +17,26 @@ var _yaw_node: Node3D
 var _pitch_node: Node3D
 var _muzzle: Node3D
 var _shield: StaticBody3D
+var _loop_3d: AudioStreamPlayer3D  # the burst, as everyone else hears it
+var _loop_2d: AudioStreamPlayer  # the burst, as the player on the gun hears it
+var _bursting := false
+var _burst_2d := false  # which of the two is playing
 
 
 func _ready() -> void:
 	_build_model()
+	_loop_3d = AudioStreamPlayer3D.new()
+	_loop_3d.stream = Sfx.stream("maxim_loop")
+	_loop_3d.pitch_scale = GameConfig.MG_PITCH
+	_loop_3d.volume_db = GameConfig.MG_VOLUME
+	_loop_3d.unit_size = 10.0
+	_loop_3d.max_distance = 260.0
+	_muzzle.add_child(_loop_3d)
+	_loop_2d = AudioStreamPlayer.new()
+	_loop_2d.stream = _loop_3d.stream
+	_loop_2d.pitch_scale = GameConfig.MG_PITCH
+	_loop_2d.volume_db = GameConfig.MG_VOLUME - 7.0
+	add_child(_loop_2d)
 
 
 func shield_rid() -> RID:
@@ -73,6 +91,8 @@ func dismount() -> void:
 	if gunner == null:
 		return
 	var s := gunner
+	if _bursting:
+		_end_burst()
 	gunner = null
 	s.turret = null
 	gunner_changed.emit(null)
@@ -95,6 +115,27 @@ func drive(s: Soldier, delta: float) -> void:
 			_cooldown = maxf(_cooldown + GameConfig.MG_FIRE_INTERVAL, 0.0)
 	else:
 		_cooldown = maxf(_cooldown, 0.0)
+		if _bursting and _cooldown <= 0.0:
+			_end_burst()
+
+
+func _start_burst(s: Soldier) -> void:
+	_bursting = true
+	_burst_2d = s.is_player
+	if _burst_2d:
+		_loop_2d.play()
+	else:
+		_loop_3d.play()
+
+
+func _end_burst() -> void:
+	_bursting = false
+	if _burst_2d:
+		_loop_2d.stop()
+		Sfx.play_2d(self, "maxim_end", _loop_2d.volume_db, 0.0, GameConfig.MG_PITCH)
+	else:
+		_loop_3d.stop()
+		Sfx.play_3d(self, "maxim_end", muzzle_position(), GameConfig.MG_VOLUME, 0.0, 260.0, GameConfig.MG_PITCH, 10.0)
 
 
 func _fire(s: Soldier) -> void:
@@ -120,10 +161,8 @@ func _fire(s: Soldier) -> void:
 			Fx.impact(fx_root, end, r.normal)
 	Fx.tracer(fx_root, from, end)
 	Fx.flash(fx_root, from + dir * 0.1, 3.0, 0.3)
-	if s.is_player:
-		Sfx.play_2d(self, "maxim", -3.0, 0.05)
-	else:
-		Sfx.play_3d(self, "maxim", from, 2.0, 0.05, 220.0)
+	if not _bursting:
+		_start_burst(s)
 	s.on_turret_fired()
 
 

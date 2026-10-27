@@ -47,31 +47,30 @@ func fire_sound() -> String:
 func update(delta: float) -> void:
 	_tick_timers(delta)
 	if _pump_pending and soldier.now() - last_shot_time > 0.32:
+		# Halo 2 pumps after every shot: the rack, quieter than a reload's.
 		_pump_pending = false
-		soldier.weapon_sound("pump", -5.0)
+		soldier.weapon_sound("rack", -12.0)
 	match state:
 		State.COOLDOWN:
 			if timer <= 0.0:
 				state = State.READY
 		State.RELOAD_START:
 			if timer <= 0.0:
-				state = State.RELOAD_SHELL
-				timer = GameConfig.SG_RELOAD_SHELL
+				_next_shell()
 		State.RELOAD_SHELL:
 			if timer <= 0.0:
 				if reserve > 0 and mag < mag_size():
 					mag += 1
 					reserve -= 1
-					soldier.weapon_sound("shell", -6.0)
 				if mag >= mag_size() or reserve <= 0:
 					state = State.RELOAD_END
 					timer = GameConfig.SG_RELOAD_END
+					soldier.weapon_sound("rack", -6.0)
 				else:
-					timer = GameConfig.SG_RELOAD_SHELL
+					_next_shell()
 		State.RELOAD_END:
 			if timer <= 0.0:
 				state = State.READY
-				soldier.weapon_sound("pump", -4.0)
 
 	if soldier.in_fire:
 		# Pulling the trigger mid-reload fires the shells already loaded.
@@ -93,6 +92,13 @@ func update(delta: float) -> void:
 func _start_reload() -> void:
 	state = State.RELOAD_START
 	timer = GameConfig.SG_RELOAD_START
+
+
+## The shell sound starts with the hand, as the shell is pushed in.
+func _next_shell() -> void:
+	state = State.RELOAD_SHELL
+	timer = GameConfig.SG_RELOAD_SHELL
+	soldier.weapon_sound("shell", -7.0)
 
 
 static func falloff(dist: float) -> float:

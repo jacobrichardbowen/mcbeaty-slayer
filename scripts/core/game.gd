@@ -33,6 +33,14 @@ func start() -> void:
 	Fx.reset()
 	Sfx.warm_up()
 	_build_environment()
+	# Wind and snow howl over Ascension all match long, under the gunfire.
+	var wind := AudioStreamPlayer.new()
+	wind.name = "Wind"
+	wind.stream = Sfx.stream("wind")
+	wind.volume_db = GameConfig.WIND_VOLUME
+	wind.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(wind)
+	wind.play()
 	level = AscensionLevel.new()
 	level.name = "Ascension"
 	add_child(level)

@@ -1,36 +1,44 @@
 class_name Sfx
 extends RefCounted
-## Procedurally synthesized sound effects, so the prototype ships no audio
-## files. Each sound is rendered once into an AudioStreamWAV and cached.
+## Sound effects. Weapons, voices and the wind are recordings in
+## assets/sounds (prepared by tools/prepare_sounds.py); each play picks one
+## of a sound's takes at random, never the same one twice running. Small
+## mechanical sounds are still synthesized once into an AudioStreamWAV.
 
+const DIR := "res://assets/sounds/"
 const RATE := 22050
-# Halo 2 picks one of three recordings per shot, so repeats never sound canned.
-const VARIANTS := {"shotgun": 3, "rifle": 3}
+# name -> takes (file names in DIR, without extension)
+const RECORDED := {
+	"shotgun": ["Shotgun 1", "Shotgun 2", "Shotgun 3", "Shotgun 4", "Shotgun 5"],
+	"rifle": ["Pistol Heavy Shot 1", "Pistol Heavy Shot 2", "Pistol Heavy Shot 3", "Pistol Heavy Shot 4", "Pistol Heavy Shot 5"],
+	"shell": ["Insert Shell 01", "Insert Shell 02", "Insert Shell 03", "Insert Shell 04"],
+	"rack": ["Shotgun Reload 01", "Shotgun Reload 02", "Shotgun Reload 03"],
+	"rifle_reload": ["Generic 01", "Generic 02", "Generic 03"],
+	"pain": ["Grunt-Pain 01", "Grunt-Pain 02", "Grunt-Pain 03", "Grunt-Pain 04", "Grunt-Pain 05"],
+	"whiz": ["Whiz 01", "Whiz 02", "Whiz 03", "Whiz 04", "Whiz 05", "Whiz 06", "Whiz 07", "Whiz 08", "Whiz 09", "Whiz 10"],
+	"maxim_loop": ["Machinegun 4 Loop"],
+	"maxim_end": ["Machinegun 4 Loop End"],
+	"wind": ["Howling Wind and Snow"],
+}
 
 static var _cache := {}
+static var _last_take := {}
 
 
-static func stream(sound: String) -> AudioStreamWAV:
-	if VARIANTS.has(sound):
-		sound += str(randi() % int(VARIANTS[sound]))
+static func stream(sound: String) -> AudioStream:
+	if RECORDED.has(sound):
+		var takes: Array = RECORDED[sound]
+		var i := randi() % takes.size()
+		if takes.size() > 1 and i == _last_take.get(sound, -1):
+			i = (i + 1 + randi() % (takes.size() - 1)) % takes.size()
+		_last_take[sound] = i
+		return _recording(takes[i])
 	if _cache.has(sound):
 		return _cache[sound]
 	var s: PackedFloat32Array
 	match sound:
-		"shotgun0", "shotgun1", "shotgun2":
-			s = _shotgun(int(sound.right(1)))
-		"rifle0", "rifle1", "rifle2":
-			s = _rifle(int(sound.right(1)))
 		"bolt":
 			s = _mix([_click(0.0, 0.6), _click(0.09, 0.5), _tone(520.0, 0.04, 0.01, 0.2)])
-		"clip":
-			s = _mix([_click(0.0, 0.7), _noise(0.12, 0.03, 2500.0, 0.3), _click(0.1, 0.6)])
-		"maxim":
-			s = _mix([_noise(0.22, 0.035, 2600.0, 1.0), _tone(70.0, 0.22, 0.05, 0.7)])
-		"pump":
-			s = _mix([_click(0.0, 0.5), _click(0.17, 0.7), _tone(320.0, 0.05, 0.015, 0.25)])
-		"shell":
-			s = _click(0.0, 0.5)
 		"dry":
 			s = _click(0.0, 0.3)
 		"swing":
@@ -47,8 +55,6 @@ static func stream(sound: String) -> AudioStreamWAV:
 			s = _mix([_tone(880.0, 0.12, 0.05, 0.4), _delay(_tone(1320.0, 0.15, 0.06, 0.4), 0.08)])
 		"mount":
 			s = _mix([_tone(420.0, 0.4, 0.09, 0.4), _tone(1130.0, 0.3, 0.05, 0.3), _noise(0.08, 0.01, 4000.0, 0.4)])
-		"hurt":
-			s = _mix([_tone(140.0, 0.12, 0.04, 0.5), _noise(0.1, 0.03, 1200.0, 0.4)])
 		_:
 			s = _click(0.0, 0.2)
 	var wav := _to_wav(s)
@@ -56,62 +62,59 @@ static func stream(sound: String) -> AudioStreamWAV:
 	return wav
 
 
-## Renders every sound up front so the first shots of a match don't hitch.
+static func _recording(file: String) -> AudioStream:
+	if not _cache.has(file):
+		var path := DIR + file + ".wav"
+		if not ResourceLoader.exists(path):
+			path = DIR + file + ".ogg"
+		_cache[file] = load(path)
+	return _cache[file]
+
+
+## Loads and renders everything up front so the first shots of a match don't
+## hitch, and puts a limiter on the master bus so a firefight never clips.
 static func warm_up() -> void:
-	for sound in ["maxim", "pump", "bolt", "clip", "shell", "dry", "swing", "melee_hit", "step", "land", "hurt"]:
+	for sound in ["bolt", "dry", "swing", "melee_hit", "step", "land", "teleport", "pickup", "mount"]:
 		stream(sound)
-	for sound: String in VARIANTS:
-		for take in int(VARIANTS[sound]):
-			stream(sound + str(take))
+	for sound: String in RECORDED:
+		for file: String in RECORDED[sound]:
+			_recording(file)
+	for i in AudioServer.get_bus_effect_count(0):
+		if AudioServer.get_bus_effect(0, i) is AudioEffectHardLimiter:
+			return
+	var limiter := AudioEffectHardLimiter.new()
+	limiter.ceiling_db = -0.5
+	AudioServer.add_bus_effect(0, limiter)
 
 
-static func play_3d(parent: Node, sound: String, pos: Vector3, volume_db := 0.0, jitter := 0.06, max_dist := 160.0) -> void:
+static func play_3d(parent: Node, sound: String, pos: Vector3, volume_db := 0.0, jitter := 0.06, max_dist := 160.0,
+		pitch := 1.0, unit_size := 8.0) -> AudioStreamPlayer3D:
 	if parent == null or not parent.is_inside_tree():
-		return
+		return null
 	var p := AudioStreamPlayer3D.new()
 	p.stream = stream(sound)
 	p.volume_db = volume_db
-	p.pitch_scale = 1.0 + randf_range(-jitter, jitter)
+	p.pitch_scale = pitch * (1.0 + randf_range(-jitter, jitter))
 	p.max_distance = max_dist
-	p.unit_size = 8.0
+	p.unit_size = unit_size
 	parent.add_child(p)
 	p.global_position = pos
 	p.finished.connect(p.queue_free)
 	p.play()
+	return p
 
 
-static func play_2d(parent: Node, sound: String, volume_db := 0.0, jitter := 0.04) -> void:
+static func play_2d(parent: Node, sound: String, volume_db := 0.0, jitter := 0.04, pitch := 1.0) -> AudioStreamPlayer:
 	if parent == null or not parent.is_inside_tree():
-		return
+		return null
 	var p := AudioStreamPlayer.new()
 	p.stream = stream(sound)
 	p.volume_db = volume_db
-	p.pitch_scale = 1.0 + randf_range(-jitter, jitter)
+	p.pitch_scale = pitch * (1.0 + randf_range(-jitter, jitter))
 	parent.add_child(p)
 	p.finished.connect(p.queue_free)
 	p.play()
-
-
-# --- gunshots -------------------------------------------------------------------
-
-## Three takes of the blast: darker or brighter, boomier or tighter, and a
-## different slap back off the cliffs.
-static func _shotgun(take: int) -> PackedFloat32Array:
-	var thump: float = [52.0, 46.0, 59.0][take]
-	var bright: float = [3200.0, 2600.0, 3900.0][take]
-	var tail: float = [0.11, 0.135, 0.095][take]
-	var echo: float = [0.1, 0.14, 0.075][take]
-	return _mix([_noise(0.9, tail, bright, 1.0), _tone(thump, 0.9, 0.16, 0.9),
-		_noise(0.02, 0.004, 9000.0, 0.6), _delay(_noise(0.7, 0.22, 800.0, 0.16), echo)])
-
-
-## Sharp supersonic crack, a short body, then a rolling echo off the peaks.
-static func _rifle(take: int) -> PackedFloat32Array:
-	var body: float = [3800.0, 3300.0, 4300.0][take]
-	var thump: float = [95.0, 86.0, 104.0][take]
-	var echo: float = [0.09, 0.13, 0.065][take]
-	return _mix([_noise(0.03, 0.006, 9000.0, 0.9), _noise(0.25, 0.045, body, 1.0),
-		_tone(thump, 0.25, 0.07, 0.7), _delay(_noise(0.9, 0.28, 900.0, 0.22), echo)])
+	return p
 
 
 # --- synthesis helpers ---------------------------------------------------------

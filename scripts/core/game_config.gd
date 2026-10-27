@@ -105,10 +105,15 @@ const RF_CROUCH_MULT := 0.6
 const RF_ZOOM := 2.0
 const RF_ZOOM_SPREAD_MULT := 0.5
 const RF_AUTOAIM_RANGE := 45.0
+const RF_WHIZ_RADIUS := 3.0  # rounds passing this close to your head whiz by
 const HEAD_HEIGHT := 0.32  # top of the body that counts as head
 
 # --- Maxim gun on the Big Tower ----------------------------------------------
-const MG_FIRE_INTERVAL := 0.1  # 600 rounds per minute
+# The burst is a recorded loop played pitched down for weight; firing keeps
+# time with its shots (7 in 0.5747 s), 585 rounds a minute at this pitch.
+const MG_PITCH := 0.8
+const MG_FIRE_INTERVAL := 0.5747 / 7.0 / MG_PITCH
+const MG_VOLUME := 4.0  # dB, louder than the hand guns
 const MG_DAMAGE := 24.0
 const MG_SPREAD := 0.7
 const MG_RANGE := 160.0
@@ -130,6 +135,9 @@ const FLING_MELEE := 5.0
 const FLING_LIFT := 0.35  # extra upward throw, as a share of the fling
 const RAGDOLL_LIFETIME := 10.0
 const RAGDOLL_MAX := 12  # oldest bodies vanish first
+
+# --- Sound -------------------------------------------------------------------
+const WIND_VOLUME := -13.0  # dB: audible in lulls, well under the gunfire
 
 # --- Match ---------------------------------------------------------------------
 const TIME_LIMIT := 15.0 * 60.0

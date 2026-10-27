@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://bddsqqjk5ssb2"
+path="res://.godot/imported/Machinegun 4 Loop End.wav-d47f1ebf5288c995e4bd89f80230fcc1.sample"
+
+[deps]
+
+source_file="res://assets/sounds/Machinegun 4 Loop End.wav"
+dest_files=["res://.godot/imported/Machinegun 4 Loop End.wav-d47f1ebf5288c995e4bd89f80230fcc1.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

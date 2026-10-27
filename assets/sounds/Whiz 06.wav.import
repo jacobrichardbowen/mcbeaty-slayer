@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://csgrpplp8nxn1"
+path="res://.godot/imported/Whiz 06.wav-2b5101ff6a7590e2b3c9b94e15eea015.sample"
+
+[deps]
+
+source_file="res://assets/sounds/Whiz 06.wav"
+dest_files=["res://.godot/imported/Whiz 06.wav-2b5101ff6a7590e2b3c9b94e15eea015.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

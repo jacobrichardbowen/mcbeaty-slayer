@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://du5mc82wq8wh0"
+path="res://.godot/imported/Grunt-Pain 03.wav-826142f284ea2e3ebc86f28b09381a78.sample"
+
+[deps]
+
+source_file="res://assets/sounds/Grunt-Pain 03.wav"
+dest_files=["res://.godot/imported/Grunt-Pain 03.wav-826142f284ea2e3ebc86f28b09381a78.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

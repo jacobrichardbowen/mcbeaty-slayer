@@ -7,7 +7,7 @@ extends Weapon
 
 var _bloom := 0.0  # degrees
 var _trigger_down := false
-var _bolt_pending := false
+var _reload_sound: Node = null
 
 
 func _init(owner_soldier: Soldier) -> void:
@@ -51,6 +51,19 @@ func fire_sound() -> String:
 func reset() -> void:
 	super()
 	_bloom = 0.0
+	_stop_reload_sound()
+
+
+func interrupt(block_time: float) -> void:
+	if is_reloading():
+		_stop_reload_sound()
+	super(block_time)
+
+
+func _stop_reload_sound() -> void:
+	if is_instance_valid(_reload_sound):
+		_reload_sound.queue_free()
+	_reload_sound = null
 
 
 func spread_deg() -> float:
@@ -69,9 +82,6 @@ func spread_deg() -> float:
 func update(delta: float) -> void:
 	_tick_timers(delta)
 	_bloom = move_toward(_bloom, 0.0, GameConfig.RF_BLOOM_RECOVERY * delta)
-	if _bolt_pending and soldier.now() - last_shot_time > 0.12:
-		_bolt_pending = false
-		soldier.weapon_sound("bolt", -9.0)
 	match state:
 		State.COOLDOWN:
 			if timer <= 0.0:
@@ -80,20 +90,17 @@ func update(delta: float) -> void:
 			if timer <= 0.0:
 				state = State.RELOAD_SHELL
 				timer = GameConfig.RF_RELOAD_CLIP
-				soldier.weapon_sound("bolt", -6.0)
 		State.RELOAD_SHELL:
 			# Pressing a stripper clip into the magazine.
 			if timer <= 0.0:
 				var n := mini(mag_size() - mag, reserve)
 				mag += n
 				reserve -= n
-				soldier.weapon_sound("clip", -5.0)
 				state = State.RELOAD_END
 				timer = GameConfig.RF_RELOAD_END
 		State.RELOAD_END:
 			if timer <= 0.0:
 				state = State.READY
-				soldier.weapon_sound("bolt", -6.0)
 
 	# Semi-automatic: one shot per pull of the trigger.
 	var pulled := soldier.in_fire and not _trigger_down
@@ -111,9 +118,11 @@ func update(delta: float) -> void:
 		_start_reload()
 
 
+## One recording covers the whole reload: bolt back, clip in, bolt home.
 func _start_reload() -> void:
 	state = State.RELOAD_START
 	timer = GameConfig.RF_RELOAD_START
+	_reload_sound = soldier.weapon_sound("rifle_reload", -8.0)
 
 
 static func falloff(dist: float) -> float:
@@ -126,7 +135,6 @@ static func falloff(dist: float) -> float:
 func _fire() -> void:
 	var spread := deg_to_rad(spread_deg())
 	_begin_shot()
-	_bolt_pending = true
 	_bloom = minf(_bloom + GameConfig.RF_BLOOM_PER_SHOT, GameConfig.RF_BLOOM_MAX)
 	var origin := soldier.eye_position()
 	var dir := cone_direction(soldier.aim_direction(), spread)
@@ -136,8 +144,10 @@ func _fire() -> void:
 	soldier.on_weapon_fired()
 	if r.is_empty():
 		Fx.tracer(fx_root, soldier.muzzle_position(), end, Color(1.0, 0.9, 0.7, 0.6))
+		_whiz(origin, end, null)
 		return
 	end = r.position
+	_whiz(origin, end, r.collider)
 	Fx.tracer(fx_root, soldier.muzzle_position(), end, Color(1.0, 0.9, 0.7, 0.6))
 	var col: Object = r.collider
 	if col is Soldier:
@@ -150,3 +160,18 @@ func _fire() -> void:
 		target.take_damage(dmg, soldier, "headshot" if head else "rifle", end, dir)
 	else:
 		Fx.impact(fx_root, end, r.normal)
+
+
+## A round that passes close by the player's head, without hitting them,
+## whizzes past: louder the closer it came, from where it passed.
+func _whiz(from: Vector3, to: Vector3, hit: Object) -> void:
+	var p := soldier.local_player()
+	if p == null or p == soldier or not p.alive or hit == p:
+		return
+	var ear := p.eye_position()
+	var path := to - from
+	var t := clampf((ear - from).dot(path) / path.length_squared(), 0.0, 1.0)
+	var near := from + path * t
+	var miss := near.distance_to(ear)
+	if t > 0.0 and t < 1.0 and miss < GameConfig.RF_WHIZ_RADIUS:
+		Sfx.play_3d(p, "whiz", near, lerpf(0.0, -10.0, miss / GameConfig.RF_WHIZ_RADIUS), 0.08, 25.0, 1.0, 3.0)

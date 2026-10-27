@@ -447,7 +447,6 @@ func on_melee() -> void:
 func on_damaged(amount: float, _attacker: Soldier, _pos: Vector3) -> void:
 	damage_flash = minf(1.0, damage_flash + amount / 60.0)
 	soldier.zoomed = false  # Halo: getting shot knocks you out of zoom
-	Sfx.play_2d(self, "hurt", -10.0, 0.1)
 
 
 func on_spawned() -> void:

@@ -1,4 +1,4 @@
-# Mcbeaty Slayer: Tower of Power
+# Tower of Power
 
 A Godot 4 prototype that tries to recreate the feel of Halo 2 multiplayer
 and the community gametype **Tower of Power** on **Ascension**. Two teams
@@ -19,7 +19,7 @@ mount. The map and the guns are still crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Download `McbeatySlayer.exe` and double-click
+You don't need Godot to play. Download the latest build (`TowerOfPower_v005.exe`) and double-click
 it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
@@ -34,8 +34,10 @@ normal double-click.
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-the Windows build into `build/`. The Mac and Linux presets are still there:
-`tools/build.sh Windows macOS Linux` builds all three.
+the Windows build into `build/` as `TowerOfPower_v005.exe`. The number comes
+from `config/version` in `project.godot`; bump it for each new build. The Mac
+and Linux presets are still there: `tools/build.sh Windows macOS Linux` builds
+all three.
 
 ### Running from the editor
 
@@ -90,7 +92,7 @@ turret placed in one of the towers.
   degree when standing still, growing when you fire fast, move or jump, and
   halved when zoomed. Right click / R3 zooms 2x like Halo 2's Battle Rifle;
   taking damage knocks you out of zoom.
-- **Maxim**: 600 rounds/min, infinite belt, 72° traverse either side, from
+- **Maxim**: 585 rounds/min, infinite belt, 72° traverse either side, from
   22° up to 55° down. Third-person camera while you're on it, as with Halo 2
   vehicles. The gunner stays exposed from the sides and from the stairwell
   that comes out right behind them.
@@ -98,7 +100,7 @@ turret placed in one of the towers.
   or backwards (Halo 2: 6.9 and 6.1), and jump about 1.8 m (Halo 2: 2.4).
 - **Deaths**: bodies go limp and are thrown along the killing shot, hardest by
   a point-blank shotgun blast, much as Havok did in Halo 2. The death camera
-  follows the body. Each gunshot plays one of three takes of its sound.
+  follows the body.
 - Melee lunge, crouch-jumping, fall damage, a 5 s respawn, kill feed, Halo 2
   multi-kill and spree callouts, and a motion tracker (25 m; it shows enemies
   only while they move upright or fire).
@@ -154,6 +156,42 @@ Bots navigate a navmesh baked at startup from the level's collision. Swapping
 in real geometry later should be close to drop-in: provide meshes and
 colliders, spawn points, routes and the turret transform the way
 [`scripts/level/ascension.gd`](scripts/level/ascension.gd) does.
+
+## Sound
+
+Weapons, voices and the wind are recordings, in
+[`assets/sounds/`](assets/sounds/). Each play picks one of a sound's takes at
+random, never the same take twice running.
+
+| Sound | Plays when |
+|---|---|
+| Shotgun 1–5 | the shotgun fires |
+| Shotgun Reload 01–03 | a shotgun reload finishes; quieter, as the pump after each shot |
+| Insert Shell 01–04 | each shell goes into the shotgun |
+| Pistol Heavy Shot 1–5 | the Mosin fires |
+| Generic 01–03 | the Mosin reloads (one take covers the whole reload) |
+| Whiz 01–10 | a Mosin round passes within 3 m of your head without hitting you |
+| Grunt-Pain 01–05 | a soldier is hurt (at most every 0.6 s) or killed |
+| Machinegun 4 Loop / Loop End | the Maxim fires a burst / stops firing |
+| Howling Wind and Snow | all match long, under everything else |
+
+The Maxim plays one seamless loop, pitched down to 0.8 for weight and turned
+up above the hand guns. The gun fires in time with the loop's recorded shots
+(585 rounds a minute at that pitch). Letting go waits for the next beat, then
+plays the last round and its echo. The loop as uploaded dropped to silence for
+about 30 ms at each repeat. Here it is rebuilt from its seven middle shots, with
+both ends cut just before a shot and crossfaded.
+
+[`tools/prepare_sounds.py`](tools/prepare_sounds.py) made these files from the
+uploaded originals (kept on the `godot-scaffold` branch). It converts them to
+mono, so they pan in 3D, and trims the dead air before each sound, which takes
+up to 55 ms of lag off the gunshots. It also rebuilds the Maxim loop, trims the
+end-of-burst file to its final shot, and turns the first 110 s of the wind into
+a seamless, gently compressed Ogg loop. It needs `ffmpeg` and Python with
+numpy. A master-bus limiter keeps big firefights from clipping. Footsteps,
+melee and other small mechanical sounds are still synthesized in code.
+
+The wind is "Howling wind and snow" by Dragon Studio.
 
 ## The soldier character
 
@@ -243,6 +281,8 @@ scripts/
   weapons/maxim_turret.gd   the Tower of Power
   ui/hud.gd                 Halo 2-style HUD, tracker, kill feed
   fx/ragdoll.gd             limp bodies thrown by the killing shot, on the character's skeleton
-  fx/                       particles, tracers and synthesized sounds (no asset files)
+  fx/sfx.gd                 recorded and synthesized sounds, random takes, master limiter
+  fx/                       particles and tracers
 assets/characters/soldier/  the character and the six clips it uses
+assets/sounds/              the recorded sounds (see tools/prepare_sounds.py)
 ```

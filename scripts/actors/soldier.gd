@@ -58,6 +58,7 @@ var _lunge_time := 0.0
 var _action_hold := 0.0
 var _action_used := false
 var _step_accum := 0.0
+var _last_grunt := -100.0
 
 
 func setup(game: Game, p_team: int, p_name: String, player: bool) -> void:
@@ -96,6 +97,11 @@ func now() -> float:
 
 func fx_root() -> Node3D:
 	return _game.fx_root
+
+
+## The human player, for sounds only they should hear.
+func local_player() -> Soldier:
+	return _game.player if _game else null
 
 
 func eye_position() -> Vector3:
@@ -381,6 +387,8 @@ func take_damage(amount: float, attacker: Soldier, cause: String, hit_pos: Vecto
 	if attacker and attacker != self and attacker.team == team and not GameConfig.FRIENDLY_FIRE:
 		return
 	health -= amount
+	if health > 0.0:
+		_grunt(false)
 	last_damage_time = now()
 	if attacker and attacker != self:
 		last_attacker = attacker
@@ -408,6 +416,7 @@ func die(killer: Soldier, cause: String, dir := Vector3.ZERO, fling := 0.0) -> v
 	_lunge_target = null
 	collision_layer = 0
 	collision_mask = GameConfig.LAYER_WORLD
+	_grunt(true)
 	ragdoll = Ragdoll.spawn(self, dir, fling, cause == "headshot")
 	model.visible = false
 	velocity = Vector3.ZERO
@@ -445,11 +454,22 @@ func respawn(xf: Transform3D) -> void:
 
 # --- Hooks used by weapons --------------------------------------------------------------
 
-func weapon_sound(sound: String, volume_db := 0.0) -> void:
+func weapon_sound(sound: String, volume_db := 0.0) -> Node:
 	if is_player:
-		Sfx.play_2d(self, sound, volume_db)
+		return Sfx.play_2d(self, sound, volume_db, 0.03)
+	return Sfx.play_3d(self, sound, eye_position(), volume_db + 3.0, 0.04, 40.0)
+
+
+## A pained grunt when hit, at most every 0.6 s, and always on dying.
+func _grunt(dying: bool) -> void:
+	if not dying and now() - _last_grunt < 0.6:
+		return
+	_last_grunt = now()
+	var louder := 3.0 if dying else 0.0
+	if is_player:
+		Sfx.play_2d(self, "pain", -9.0 + louder, 0.05)
 	else:
-		Sfx.play_3d(self, sound, eye_position(), volume_db, 0.06, 40.0)
+		Sfx.play_3d(self, "pain", eye_position(), -6.0 + louder, 0.08, 45.0)
 
 
 func make_weapon(kind: String) -> Weapon:
@@ -473,9 +493,9 @@ func on_weapon_fired() -> void:
 	model.kick()
 	var sound := weapon.fire_sound()
 	if is_player:
-		Sfx.play_2d(self, sound, -2.0, 0.05)
+		Sfx.play_2d(self, sound, -3.0, 0.03)
 	else:
-		Sfx.play_3d(self, sound, eye_position(), 3.0, 0.05, 220.0)
+		Sfx.play_3d(self, sound, eye_position(), -1.0, 0.03, 220.0)
 		Fx.flash(fx_root(), model.muzzle_position(), 4.0, 0.4)
 	if controller and controller.has_method("on_weapon_fired"):
 		controller.on_weapon_fired()
