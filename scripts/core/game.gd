@@ -14,6 +14,7 @@ var player_ctrl: PlayerController
 var hud: Hud
 var pause_menu: PauseMenu
 var fx_root: Node3D
+var wind: AudioStreamPlayer
 var scores := [0, 0]
 var time := 0.0
 var time_left := GameConfig.TIME_LIMIT
@@ -34,7 +35,7 @@ func start() -> void:
 	Sfx.warm_up()
 	_build_environment()
 	# Wind and snow howl over Ascension all match long, under the gunfire.
-	var wind := AudioStreamPlayer.new()
+	wind = AudioStreamPlayer.new()
 	wind.name = "Wind"
 	wind.stream = Sfx.stream("wind")
 	wind.volume_db = GameConfig.WIND_VOLUME
@@ -45,6 +46,7 @@ func start() -> void:
 	level.name = "Ascension"
 	add_child(level)
 	level.build()
+	Acoustics.setup(level)
 	fx_root = Node3D.new()
 	fx_root.name = "Fx"
 	add_child(fx_root)
@@ -56,7 +58,7 @@ func start() -> void:
 	var start_holder := GameConfig.bunker_start
 	bunker = BunkerControl.new(start_holder)
 	bunker.holder_changed.connect(_on_holder_changed)
-	level.set_flag_team(start_holder)
+	level.set_flag_team(start_holder, true)
 	for p in level.ammo_points:
 		_add_pickup(ground_point(p), 0, false)
 	for tp in level.teleporters:
@@ -114,6 +116,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb and mb.pressed and not input_blocked() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _process(delta: float) -> void:
+	# Indoors the wind drops to a muffled whistle.
+	var cam := get_viewport().get_camera_3d()
+	var target := GameConfig.WIND_VOLUME - (10.0 if cam and Acoustics.indoors(cam.global_position) else 0.0)
+	wind.volume_db = move_toward(wind.volume_db, target, delta * 20.0)
 
 
 func _physics_process(delta: float) -> void:

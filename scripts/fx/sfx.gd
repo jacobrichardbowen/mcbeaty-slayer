@@ -99,6 +99,7 @@ static func play_3d(parent: Node, sound: String, pos: Vector3, volume_db := 0.0,
 	p.unit_size = unit_size
 	parent.add_child(p)
 	p.global_position = pos
+	Acoustics.route_3d(p, pos, volume_db)
 	p.finished.connect(p.queue_free)
 	p.play()
 	return p
@@ -112,6 +113,7 @@ static func play_2d(parent: Node, sound: String, volume_db := 0.0, jitter := 0.0
 	p.volume_db = volume_db
 	p.pitch_scale = pitch * (1.0 + randf_range(-jitter, jitter))
 	parent.add_child(p)
+	Acoustics.route_2d(p)
 	p.finished.connect(p.queue_free)
 	p.play()
 	return p

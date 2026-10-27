@@ -19,7 +19,7 @@ mount. The map and the guns are still crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Download the latest build (`TowerOfPower_v005.exe`) and double-click
+You don't need Godot to play. Download the latest build (`TowerOfPower_v006.exe`) and double-click
 it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
@@ -34,7 +34,7 @@ normal double-click.
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-the Windows build into `build/` as `TowerOfPower_v005.exe`. The number comes
+the Windows build into `build/` as `TowerOfPower_v006.exe`. The number comes
 from `config/version` in `project.godot`; bump it for each new build. The Mac
 and Linux presets are still there: `tools/build.sh Windows macOS Linux` builds
 all three.
@@ -129,6 +129,12 @@ The bunker spawns sit outside the tower, so holders have to come back in to
 defend it. The top of the screen shows who holds the bunker, whether the gun
 is manned, and a bar while someone is taking it over.
 
+Whoever holds the bunker flies their flag from a 30 m pole on the tower: the
+Whites' white-blue-red tricolour or the Reds' red banner with a gold star. It is
+12 m long and lit, so it can be seen from anywhere on the map. When the bunker
+changes hands the old flag drops and the new one runs up. The pole has no
+collision, so it never gets in the way.
+
 ## The map
 
 The Ascension here is a **hand-built blockout**. I couldn't download the
@@ -193,6 +199,25 @@ melee and other small mechanical sounds are still synthesized in code.
 
 The wind is "Howling wind and snow" by Dragon Studio.
 
+### How sound carries
+
+The world shapes what you hear, in the spirit of Peak and Big Walk
+([`scripts/fx/acoustics.gd`](scripts/fx/acoustics.gd)):
+
+- **Distance**: sounds fall off naturally (half the pressure per doubling of
+  distance). Air takes only a little treble off far sounds. Godot's default
+  treble cut, which made everything past about 16 m sound muffled, is off.
+- **In the way**: a sound is muffled only when something solid stands between
+  you and it. Four lines are tried (to the source, above it and to either
+  side), because sound bends round small things like the gun shield. Stone
+  walls muffle more than a ledge or a rock does.
+- **Behind you**: a little duller, as your head shades it. Stereo is half
+  strength, so a sound to one side doesn't vanish from the other ear.
+- **The space**: outdoors, the mountains throw back a dull echo about 0.4 s
+  later, and far sounds come to you with more echo. Inside the tower's
+  stairwell, the Command Center and the roofed side paths, sounds take on a
+  tight, boomy room instead, and the wind drops.
+
 ## The soldier character
 
 The soldiers are `Soldier_White_A_v005_JBO.fbx`, rigged with Mixamo's
@@ -214,7 +239,16 @@ match how fast the soldier is moving. After the clips play, the spine turns
 so the gun (placed between the hands) points exactly where the soldier aims.
 The pack has no crouch clips, so crouching lowers the hips and bends the knees
 to keep the feet where the clip put them. Mixamo crouch clips would look
-better if you want to add them later.
+better if you want to add them later. The same leg bending tames the run's
+bounce, sped up as it is: only a third of the hips' up-and-down travel is kept
+(14 cm of head bob down to 6). After the clips play, only bone rotations are
+ever changed, so nothing can build up and stretch the mesh.
+
+In first person you see the character's own sleeves and gloves. They are cut
+from its mesh by which bones they follow, posed from the aiming idle so the
+fingers curl round the grip. Each frame the right hand is put on the gun's grip
+and the left arm reaches for the pump or fore-stock, so the hands follow every
+pump, kick, reload and swing.
 
 On death, a copy of the character takes the soldier's last pose. Ten capsules
 (torso, head, upper arms, forearms, thighs, shins) then move its bones. Knees
@@ -270,9 +304,11 @@ scripts/
   core/input_setup.gd       keyboard/mouse/gamepad bindings
   level/ascension.gd        the Ascension blockout, spawns, routes, navmesh
   level/level_builder.gd    primitive/mesh/collision helpers
+  level/bunker_flag.gd      the holder's flag over the Big Tower
   actors/soldier.gd         Halo-style movement, damage, melee, mounting
   actors/soldier_model.gd   the animated character: blending, aim, crouch, guns in hand
   actors/soldier_anims.gd   turns the Mixamo clips into in-place, in-step loops
+  actors/viewmodel_arms.gd  the character's arms holding the first-person gun
   actors/player_controller.gd  input, cameras, shotgun viewmodel
   actors/bot_brain.gd       rudimentary AI
   weapons/weapon.gd         ammo/reload/cooldown shared by the hand-held guns
@@ -281,6 +317,7 @@ scripts/
   weapons/maxim_turret.gd   the Tower of Power
   ui/hud.gd                 Halo 2-style HUD, tracker, kill feed
   fx/ragdoll.gd             limp bodies thrown by the killing shot, on the character's skeleton
+  fx/acoustics.gd           occlusion, echo and rooms: how the world shapes sound
   fx/sfx.gd                 recorded and synthesized sounds, random takes, master limiter
   fx/                       particles and tracers
 assets/characters/soldier/  the character and the six clips it uses

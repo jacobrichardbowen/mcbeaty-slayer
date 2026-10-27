@@ -237,7 +237,7 @@ func _move(delta: float) -> void:
 		_step_accum += horizontal_speed() * delta
 		if _step_accum > 2.3:
 			_step_accum = 0.0
-			Sfx.play_3d(self, "step", global_position, -20.0 if not is_player else -24.0, 0.15, 30.0)
+			Sfx.play_3d(self, "step", global_position, -20.0 if not is_player else -24.0, 0.15, 30.0, 1.0, 3.0)
 
 
 ## Climb a lip up to STEP_HEIGHT that blocked horizontal movement.
@@ -263,6 +263,12 @@ func _run_speed() -> float:
 		return GameConfig.RUN_SPEED
 	var forward := maxf(in_move.normalized().y, 0.0)
 	return lerpf(GameConfig.STRAFE_SPEED, GameConfig.RUN_SPEED, forward)
+
+
+## Stands straight up, e.g. to man the Maxim (whose height is fixed).
+func stand_up() -> void:
+	if crouched:
+		_set_crouch(false, true)
 
 
 func _set_crouch(c: bool, on_floor: bool) -> void:
@@ -295,7 +301,7 @@ func _on_land(impact: float) -> void:
 		var k := (impact - GameConfig.FALL_DAMAGE_MIN_SPEED) / (GameConfig.FALL_DAMAGE_LETHAL_SPEED - GameConfig.FALL_DAMAGE_MIN_SPEED)
 		take_damage(k * GameConfig.MAX_HEALTH, null, "fall", global_position, Vector3.DOWN)
 	if impact > 7.0:
-		Sfx.play_3d(self, "land", global_position, -12.0, 0.1, 40.0)
+		Sfx.play_3d(self, "land", global_position, -12.0, 0.1, 40.0, 1.0, 4.0)
 
 
 ## The ragdoll is what you see; the hidden body just settles where it fell.
@@ -457,7 +463,7 @@ func respawn(xf: Transform3D) -> void:
 func weapon_sound(sound: String, volume_db := 0.0) -> Node:
 	if is_player:
 		return Sfx.play_2d(self, sound, volume_db, 0.03)
-	return Sfx.play_3d(self, sound, eye_position(), volume_db + 3.0, 0.04, 40.0)
+	return Sfx.play_3d(self, sound, eye_position(), volume_db + 3.0, 0.04, 40.0, 1.0, 4.0)
 
 
 ## A pained grunt when hit, at most every 0.6 s, and always on dying.
@@ -469,7 +475,7 @@ func _grunt(dying: bool) -> void:
 	if is_player:
 		Sfx.play_2d(self, "pain", -9.0 + louder, 0.05)
 	else:
-		Sfx.play_3d(self, "pain", eye_position(), -6.0 + louder, 0.08, 45.0)
+		Sfx.play_3d(self, "pain", eye_position(), -6.0 + louder, 0.08, 45.0, 1.0, 5.0)
 
 
 func make_weapon(kind: String) -> Weapon:
@@ -495,7 +501,7 @@ func on_weapon_fired() -> void:
 	if is_player:
 		Sfx.play_2d(self, sound, -3.0, 0.03)
 	else:
-		Sfx.play_3d(self, sound, eye_position(), -1.0, 0.03, 220.0)
+		Sfx.play_3d(self, sound, eye_position(), -2.0, 0.03, 220.0, 1.0, 10.0)
 		Fx.flash(fx_root(), model.muzzle_position(), 4.0, 0.4)
 	if controller and controller.has_method("on_weapon_fired"):
 		controller.on_weapon_fired()

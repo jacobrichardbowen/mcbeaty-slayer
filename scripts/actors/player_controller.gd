@@ -7,6 +7,11 @@ extends Node3D
 
 const VM_TOE_IN := 0.07
 const PUMP_REST_Z := -0.36
+# Where the hands hold each viewmodel gun (gun or pump local space).
+const SG_GRIP := Vector3(0.0, -0.075, 0.12)
+const SG_PUMP_GRIP := Vector3(-0.01, -0.055, 0.0)
+const RF_GRIP := Vector3(0.0, -0.07, 0.22)
+const RF_FORE_GRIP := Vector3(-0.01, -0.07, -0.42)
 const LOADOUTS := ["shotgun", "rifle"]
 
 var soldier: Soldier
@@ -18,6 +23,7 @@ var damage_flash := 0.0
 
 var _mode := ""
 var _vm: Node3D
+var _arms: ViewmodelArms
 var _vm_gun: Node3D  # the gun in hand
 var _vm_muzzle: Node3D
 var _vm_rest := Vector3.ZERO
@@ -319,11 +325,12 @@ func _vm_cyl(r: float, h: float) -> CylinderMesh:
 func _build_viewmodel() -> void:
 	var steel := Color(0.13, 0.13, 0.14)
 	var wood := Color(0.45, 0.28, 0.14)
-	var skin := Color(0.86, 0.68, 0.55)
-	var sleeve := Color(0.86, 0.86, 0.82) if soldier.team == GameConfig.TEAM_WHITE else Color(0.66, 0.13, 0.1)
 	_vm = Node3D.new()
 	_vm.scale = Vector3.ONE * 0.25
 	camera.add_child(_vm)
+	_arms = ViewmodelArms.new()
+	_arms.team = soldier.team
+	_vm.add_child(_arms)
 
 	var sg := _vm_new_gun("shotgun", Vector3(0.34, -0.31, -0.86), Vector3(0, 0.026, -0.8))
 	_vm_part(sg, _vm_box(Vector3(0.06, 0.085, 0.3)), steel, Vector3.ZERO)
@@ -331,14 +338,10 @@ func _build_viewmodel() -> void:
 	_vm_part(sg, _vm_cyl(0.018, 0.5), steel, Vector3(0, -0.02, -0.41), Vector3(PI / 2, 0, 0))
 	_vm_part(sg, _vm_box(Vector3(0.006, 0.02, 0.012)), Color(0.8, 0.8, 0.8), Vector3(0, 0.05, -0.75))
 	_vm_part(sg, _vm_box(Vector3(0.062, 0.115, 0.34)), wood, Vector3(0, -0.05, 0.31), Vector3(-0.18, 0, 0))
-	_vm_part(sg, _vm_box(Vector3(0.09, 0.09, 0.11)), skin, Vector3(0.0, -0.075, 0.12))
-	_vm_part(sg, _vm_box(Vector3(0.13, 0.13, 0.55)), sleeve, Vector3(0.05, -0.15, 0.42), Vector3(0.25, 0.1, 0))
 	_vm_pump = Node3D.new()
 	_vm_pump.position = Vector3(0, -0.024, PUMP_REST_Z)
 	sg.add_child(_vm_pump)
 	_vm_part(_vm_pump, _vm_box(Vector3(0.072, 0.066, 0.18)), wood, Vector3.ZERO)
-	_vm_part(_vm_pump, _vm_box(Vector3(0.1, 0.08, 0.12)), skin, Vector3(-0.01, -0.055, 0))
-	_vm_part(_vm_pump, _vm_box(Vector3(0.13, 0.13, 0.6)), sleeve, Vector3(-0.12, -0.15, 0.27), Vector3(0.28, -0.45, 0))
 
 	# Mosin: long stock running back past the hand, thin barrel, bolt on the right.
 	var rf := _vm_new_gun("rifle", Vector3(0.3, -0.3, -0.8), Vector3(0, 0.03, -1.1))
@@ -347,10 +350,6 @@ func _build_viewmodel() -> void:
 	_vm_part(rf, _vm_cyl(0.016, 0.42), steel, Vector3(0, 0.03, -0.86), Vector3(PI / 2, 0, 0))
 	_vm_part(rf, _vm_box(Vector3(0.045, 0.05, 0.24)), steel, Vector3(0, 0.035, 0.05))
 	_vm_part(rf, _vm_box(Vector3(0.006, 0.025, 0.012)), Color(0.8, 0.8, 0.8), Vector3(0, 0.06, -1.04))
-	_vm_part(rf, _vm_box(Vector3(0.09, 0.09, 0.11)), skin, Vector3(0.0, -0.07, 0.22))
-	_vm_part(rf, _vm_box(Vector3(0.13, 0.13, 0.55)), sleeve, Vector3(0.05, -0.15, 0.5), Vector3(0.25, 0.1, 0))
-	_vm_part(rf, _vm_box(Vector3(0.1, 0.08, 0.12)), skin, Vector3(-0.01, -0.07, -0.42))
-	_vm_part(rf, _vm_box(Vector3(0.13, 0.13, 0.6)), sleeve, Vector3(-0.13, -0.17, -0.12), Vector3(0.28, -0.45, 0))
 	_vm_bolt = Node3D.new()
 	_vm_bolt.position = Vector3(0.03, 0.035, 0.12)
 	rf.add_child(_vm_bolt)
@@ -425,6 +424,11 @@ func _update_viewmodel(delta: float) -> void:
 		rot += Vector3(0.1, 0.9, 0.5) * m
 	_vm_gun.position = pos
 	_vm_gun.rotation = rot
+	if _vm.visible:
+		if w.kind == "shotgun":
+			_arms.hold(_vm_gun, SG_GRIP, _vm_pump, SG_PUMP_GRIP)
+		else:
+			_arms.hold(_vm_gun, RF_GRIP, _vm_gun, RF_FORE_GRIP)
 
 
 # --- Callbacks from Soldier -------------------------------------------------------------

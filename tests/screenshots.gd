@@ -53,6 +53,7 @@ func _start() -> void:
 		["ragdoll_flight", "ragdoll", Vector3(-1, 1.6, 28), Vector3(-1, 1.0, 18.5), 16],
 		["ragdoll_rest", "free", Vector3(3.5, 2.6, 22.5), Vector3(3.2, 0.2, 17), 150],
 		["respawn_pick", "dead", Vector3(4, 0, 12), Vector3(0, 6, -44)],
+		["flag_reds", "flag", Vector3(22, 5, 32), Vector3(0, 26, -48), 260],
 	]
 
 
@@ -133,6 +134,12 @@ func _setup(shot: Array) -> void:
 						s.model._process(0.0)
 						s.die(null, "shotgun", Vector3(1, 0, -0.6 + team * 0.4), GameConfig.FLING_SHOTGUN_MAX)
 						break
+		"flag":
+			# The Reds take the bunker; their banner runs up over the tower.
+			_cam.current = true
+			_cam.global_position = shot[2]
+			_cam.look_at(shot[3], Vector3.UP)
+			game.level.set_flag_team(GameConfig.TEAM_RED)
 		"dead":
 			p.zoomed = false
 			game.player_ctrl.camera.current = true

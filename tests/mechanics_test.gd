@@ -320,11 +320,40 @@ func _physics_process(_delta: float) -> bool:
 						red = red or (m != null and m.albedo_color.r > 0.4 and m.albedo_color.g < 0.2)
 				_expect(d.team == GameConfig.TEAM_RED and red, "the Reds wear red wool")
 				_next()
-		23:
+		23:  # The holder's flag flies over the tower; a crouched gunner doesn't stretch.
+			if _frames == 1:
+				p.in_crouch = true
+				_place(p, game.turret.seat_position())
+			elif _frames == 10:
+				game.turret.mount(p)
+				p.in_crouch = false
+			elif _frames > 10 and _frames < TPS * 5:
+				game.player_ctrl._cam_pitch = deg_to_rad(GameConfig.MG_PITCH_MIN)
+				game.player_ctrl._cam_yaw = game.turret.base_yaw() + deg_to_rad(GameConfig.MG_YAW_LIMIT)
+				_data["stretch"] = maxf(_data.get("stretch", 0.0), _stretch(p.model.skeleton))
+			elif _frames == TPS * 5:
+				var flag: BunkerFlag = game.level.flag
+				_expect(flag.team == game.bunker.holder and flag.cloth_top() > BunkerFlag.POLE_HEIGHT - 1.0,
+					"the bunker holder's flag flies at the top of the pole (team %d)" % flag.team)
+				_expect(_data["stretch"] < 0.01, "a gunner who mounts crouched keeps their shape (%.3f m)" % _data["stretch"])
+				game.turret.dismount()
+				_next()
+		24:
 			print("MECHANICS TEST ", "PASSED" if _failures.is_empty() else "FAILED")
 			quit(0 if _failures.is_empty() else 1)
 			return true
 	return false
+
+
+## How far any bone sits from where its rig says it should be, in metres.
+func _stretch(sk: Skeleton3D) -> float:
+	var worst := 0.0
+	for b in sk.get_bone_count():
+		var parent := sk.get_bone_parent(b)
+		if parent >= 0:
+			var now := sk.get_bone_global_pose(b).origin.distance_to(sk.get_bone_global_pose(parent).origin)
+			worst = maxf(worst, absf(now - sk.get_bone_rest(b).origin.length()))
+	return worst * sk.global_transform.basis.get_scale().x
 
 
 func _near_spawn(s: Soldier, side: String) -> bool:

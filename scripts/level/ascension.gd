@@ -45,7 +45,15 @@ var hunt_points: Array[Vector3] = []
 var ammo_points: Array[Vector3] = []
 var teleporters: Array[Dictionary] = []
 var nav_region: NavigationRegion3D
-var flag_mesh: MeshInstance3D
+var flag: BunkerFlag
+## Enclosed spaces, for sound: the Big Tower's stairwell, the Command Center
+## and the two roofed side paths.
+var indoor_boxes: Array[AABB] = [
+	AABB(Vector3(-6.4, -1.0, -50.4), Vector3(12.8, 13.0, 12.8)),
+	AABB(Vector3(14.0, 0.0, -3.0), Vector3(9.0, 4.2, 12.0)),
+	AABB(Vector3(-32.7, -3.5, -28.5), Vector3(4.4, 3.7, 16.0)),
+	AABB(Vector3(28.3, -3.5, -28.5), Vector3(4.4, 3.7, 16.0)),
+]
 
 var _b: LevelBuilder
 var _spinner: AnimatableBody3D
@@ -85,12 +93,10 @@ func _physics_process(delta: float) -> void:
 		_spinner.rotate_y(SPIN_SPEED * delta)
 
 
-## Recolors the flag on the Big Tower to show who holds the gun (-1 = nobody).
-func set_flag_team(team: int) -> void:
-	if flag_mesh == null:
-		return
-	var names := ["cloth_white", "cloth_red"]
-	flag_mesh.material_override = LevelBuilder.mat(names[team] if team >= 0 else "cloth_grey")
+## Flies the colours of whoever holds the bunker over the Big Tower (-1 = nobody).
+func set_flag_team(team: int, instant := false) -> void:
+	if flag:
+		flag.set_team(team, instant)
 
 
 # --- Main island -----------------------------------------------------------------
@@ -322,13 +328,13 @@ func _build_big_tower() -> void:
 		l.omni_range = 9.0
 		l.position = lamp
 		add_child(l)
-	# Mast and flag at the back of the deck.
+	# Mast at the back of the deck.
 	b.cylinder(Vector3(-6.6, DECK_Y, -50.6), 0.2, 11.0, "metal", true, 0.08, 8)
 	b.cylinder(Vector3(-6.6, DECK_Y + 11.0, -50.6), 0.25, 0.5, "glow", false, 0.25, 8)
-	b.cylinder(Vector3(6.6, DECK_Y, -50.6), 0.07, 5.0, "trim", true, 0.07, 6)
-	var fm := BoxMesh.new()
-	fm.size = Vector3(0.04, 1.1, 1.8)
-	flag_mesh = b.add_mesh(fm, "cloth_grey", Transform3D(Basis(Vector3.UP, 0.4), Vector3(6.6, DECK_Y + 4.3, -49.75)))
+	# The holder's flag flies high above the deck, out of everyone's way.
+	flag = BunkerFlag.new()
+	flag.position = Vector3(0, DECK_Y, -51.6)
+	add_child(flag)
 
 
 # --- Side paths -----------------------------------------------------------------------

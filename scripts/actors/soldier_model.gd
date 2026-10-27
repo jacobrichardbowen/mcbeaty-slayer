@@ -10,6 +10,8 @@ extends Node3D
 const HEAD_TOP := 2.125  # the character's own height, to its head top bone
 const RED_WOOL := Color(0.6, 0.1, 0.08)
 const CROUCH_DROP := 0.55  # metres the hips sink when crouched
+const BOB_KEEP := 0.35  # share of the run's up-and-down bounce kept
+const BOB_RANGE := 35.0  # metres from the camera
 const UPPER_BODY := ["Spine", "Neck", "Head", "Shoulder", "Arm", "Hand"]
 
 static var _scene: PackedScene
@@ -31,6 +33,7 @@ var _kick := 0.0
 var _crouch := 0.0
 var _air := 0.0
 var _air_time := 0.0
+var _hips_avg := INF
 var _soldier: Soldier
 
 
@@ -246,8 +249,17 @@ func _animate(s: Soldier, delta: float) -> void:
 	_tree.set("parameters/air/blend_amount", _air)
 	_tree.advance(delta)
 
-	if _crouch > 0.001:
-		_crouch_legs(_crouch * CROUCH_DROP / _character.scale.x)
+	# Sped up to the game's pace the run bobs hard: keep a third of the hips'
+	# bounce around their running average (and sink them when crouched),
+	# bending the legs so the feet stay where the clip put them.
+	# Past BOB_RANGE the bounce can't be seen, so only crouching bends legs.
+	var hips_y := skeleton.get_bone_pose_position(_bone["Hips"]).y
+	_hips_avg = hips_y if _hips_avg == INF else lerpf(_hips_avg, hips_y, 1.0 - exp(-delta * 4.0))
+	var cam := get_viewport().get_camera_3d()
+	var near := cam == null or cam.global_position.distance_squared_to(global_position) < BOB_RANGE * BOB_RANGE
+	var drop := (hips_y - _hips_avg) * (1.0 - BOB_KEEP) * (1.0 if near else 0.0) + _crouch * CROUCH_DROP / _character.scale.x
+	if absf(drop) > 0.002:
+		_lower_hips(drop)
 	var swing := clampf((s.now() - s.melee_time) / 0.3, 0.0, 1.0)
 	var melee := sin(swing * PI) if swing < 1.0 else 0.0
 	_aim_spine(aim_pitch + _kick * 0.12 - melee * 0.35, melee * 0.6)
@@ -267,15 +279,51 @@ func _aim_spine(pitch: float, twist: float) -> void:
 	var now := (_grip_point("Left") - _grip_point("Right")).normalized()
 	var want := Vector3(0, sin(pitch), cos(pitch)).rotated(Vector3.UP, twist)
 	var turn := Quaternion(now, want)
-	var step := Quaternion.IDENTITY.slerp(turn, 1.0 / 3.0)
+	var step := Basis(Quaternion.IDENTITY.slerp(turn, 1.0 / 3.0))
 	for name in ["Spine", "Spine1", "Spine2"]:
 		var b: int = _bone[name]
-		var g := skeleton.get_bone_global_pose(b)
-		skeleton.set_bone_global_pose(b, Transform3D(Basis(step) * g.basis, g.origin))
+		turn_bone_to(skeleton, b, step * skeleton.get_bone_global_pose(b).basis)
 
 
-## Sinks the hips and bends each knee so the feet stay where the clip put them.
-func _crouch_legs(drop: float) -> void:
+## Sets a bone's rotation so its skeleton-space orientation becomes `rot`.
+## Only rotations (and the hips' position) are ever changed after the clips
+## play. The clips rewrite those every frame, so nothing can build up. Bone
+## lengths and scales stay exactly as rigged.
+static func turn_bone_to(sk: Skeleton3D, b: int, rot: Basis) -> void:
+	var parent := sk.get_bone_parent(b)
+	var parent_rot := sk.get_bone_global_pose(parent).basis.orthonormalized() if parent >= 0 else Basis()
+	sk.set_bone_pose_rotation(b, (parent_rot.inverse() * rot.orthonormalized()).get_rotation_quaternion())
+
+
+## Bends a two-bone limb (thigh and shin, upper arm and forearm) so its end
+## bone reaches `target`, as near as the limb's length allows, and turns the
+## end to the target's orientation. The joint bends towards `pole`, keeping
+## whatever bend the pose already has.
+static func two_bone_ik(sk: Skeleton3D, upper: int, lower: int, end: int, target: Transform3D, pole: Vector3) -> void:
+	var root := sk.get_bone_global_pose(upper)
+	var joint := sk.get_bone_global_pose(lower).origin
+	var tip := sk.get_bone_global_pose(end).origin
+	var a := root.origin.distance_to(joint)
+	var b := joint.distance_to(tip)
+	var to := target.origin - root.origin
+	var along := to.normalized()
+	var reach := clampf(to.length(), absf(a - b) + 0.01, a + b - 0.01)
+	var bend := ((joint - root.origin).slide(along).normalized() + pole).slide(along).normalized()
+	var x := (a * a - b * b + reach * reach) / (2.0 * reach)
+	var joint_want := root.origin + along * x + bend * sqrt(maxf(a * a - x * x, 0.0))
+	_swing(sk, upper, root, joint, joint_want)
+	_swing(sk, lower, sk.get_bone_global_pose(lower), sk.get_bone_global_pose(end).origin, root.origin + along * reach)
+	turn_bone_to(sk, end, target.basis)
+
+
+static func _swing(sk: Skeleton3D, b: int, pose: Transform3D, child_now: Vector3, child_want: Vector3) -> void:
+	var q := Quaternion((child_now - pose.origin).normalized(), (child_want - pose.origin).normalized())
+	turn_bone_to(sk, b, Basis(q) * pose.basis)
+
+
+## Sinks the hips (or lifts them, for a negative drop) and bends each knee so
+## the feet stay where the clip put them.
+func _lower_hips(drop: float) -> void:
 	var feet := []
 	for side in ["Left", "Right"]:
 		feet.append(skeleton.get_bone_global_pose(_bone[side + "Foot"]))
@@ -283,31 +331,8 @@ func _crouch_legs(drop: float) -> void:
 	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) - Vector3(0, drop, 0))
 	for i in 2:
 		var side: String = ["Left", "Right"][i]
-		_leg_ik(_bone[side + "UpLeg"], _bone[side + "Leg"], _bone[side + "Foot"], feet[i])
-
-
-func _leg_ik(thigh: int, shin: int, foot: int, target: Transform3D) -> void:
-	var hip := skeleton.get_bone_global_pose(thigh)
-	var knee := skeleton.get_bone_global_pose(shin).origin
-	var ankle := skeleton.get_bone_global_pose(foot).origin
-	var a := hip.origin.distance_to(knee)
-	var b := knee.distance_to(ankle)
-	var to := target.origin - hip.origin
-	var along := to.normalized()
-	var reach := clampf(to.length(), absf(a - b) + 0.01, a + b - 0.01)
-	# Knees bend forward, the way the clip already bends them.
-	var pole := ((knee - hip.origin).slide(along).normalized() + Vector3(0, 0, 1)).slide(along).normalized()
-	var x := (a * a - b * b + reach * reach) / (2.0 * reach)
-	var knee_want := hip.origin + along * x + pole * sqrt(maxf(a * a - x * x, 0.0))
-	_swing_bone(thigh, hip, knee, knee_want)
-	var k := skeleton.get_bone_global_pose(shin)
-	_swing_bone(shin, k, skeleton.get_bone_global_pose(foot).origin, hip.origin + along * reach)
-	skeleton.set_bone_global_pose(foot, Transform3D(target.basis, skeleton.get_bone_global_pose(foot).origin))
-
-
-func _swing_bone(b: int, pose: Transform3D, child_now: Vector3, child_want: Vector3) -> void:
-	var q := Quaternion((child_now - pose.origin).normalized(), (child_want - pose.origin).normalized())
-	skeleton.set_bone_global_pose(b, Transform3D(Basis(q) * pose.basis, pose.origin))
+		# Knees bend forward (+Z here), the way the clip already bends them.
+		two_bone_ik(skeleton, _bone[side + "UpLeg"], _bone[side + "Leg"], _bone[side + "Foot"], feet[i], Vector3(0, 0, 1))
 
 
 func _place_gun() -> void:

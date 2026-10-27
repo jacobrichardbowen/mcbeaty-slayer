@@ -21,6 +21,7 @@ var _loop_3d: AudioStreamPlayer3D  # the burst, as everyone else hears it
 var _loop_2d: AudioStreamPlayer  # the burst, as the player on the gun hears it
 var _bursting := false
 var _burst_2d := false  # which of the two is playing
+var _route_in := 0.0  # until the burst's sound is re-routed for the listener
 
 
 func _ready() -> void:
@@ -29,7 +30,7 @@ func _ready() -> void:
 	_loop_3d.stream = Sfx.stream("maxim_loop")
 	_loop_3d.pitch_scale = GameConfig.MG_PITCH
 	_loop_3d.volume_db = GameConfig.MG_VOLUME
-	_loop_3d.unit_size = 10.0
+	_loop_3d.unit_size = 18.0
 	_loop_3d.max_distance = 260.0
 	_muzzle.add_child(_loop_3d)
 	_loop_2d = AudioStreamPlayer.new()
@@ -80,6 +81,7 @@ func in_arc(dir: Vector3) -> bool:
 func mount(s: Soldier) -> void:
 	gunner = s
 	s.turret = self
+	s.stand_up()
 	s.velocity = Vector3.ZERO
 	s.global_position = seat_position()
 	s.snap_interpolation()
@@ -109,6 +111,10 @@ func drive(s: Soldier, delta: float) -> void:
 	_yaw_node.rotation.y = yaw
 	_pitch_node.rotation.x = pitch
 	_cooldown -= delta
+	_route_in -= delta
+	if _bursting and not _burst_2d and _route_in <= 0.0:
+		_route_in = 0.15
+		Acoustics.route_3d(_loop_3d, muzzle_position(), GameConfig.MG_VOLUME)
 	if s.in_fire:
 		if _cooldown <= 0.0:
 			_fire(s)
@@ -123,8 +129,10 @@ func _start_burst(s: Soldier) -> void:
 	_bursting = true
 	_burst_2d = s.is_player
 	if _burst_2d:
+		Acoustics.route_2d(_loop_2d)
 		_loop_2d.play()
 	else:
+		Acoustics.route_3d(_loop_3d, muzzle_position(), GameConfig.MG_VOLUME)
 		_loop_3d.play()
 
 
@@ -135,7 +143,7 @@ func _end_burst() -> void:
 		Sfx.play_2d(self, "maxim_end", _loop_2d.volume_db, 0.0, GameConfig.MG_PITCH)
 	else:
 		_loop_3d.stop()
-		Sfx.play_3d(self, "maxim_end", muzzle_position(), GameConfig.MG_VOLUME, 0.0, 260.0, GameConfig.MG_PITCH, 10.0)
+		Sfx.play_3d(self, "maxim_end", muzzle_position(), GameConfig.MG_VOLUME, 0.0, 260.0, GameConfig.MG_PITCH, 18.0)
 
 
 func _fire(s: Soldier) -> void:
