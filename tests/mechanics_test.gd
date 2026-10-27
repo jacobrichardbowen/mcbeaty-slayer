@@ -2,7 +2,8 @@ extends SceneTree
 ## Checks the core Tower of Power numbers in a live world (no bots):
 ## shotgun range, melee, fall damage, jump height, turret arc and lethality,
 ## the bunker-control rules that decide where each team spawns, the neutral
-## start, ragdolls, and the Mosin rifle and respawn weapon choice.
+## start, ragdolls, the Mosin rifle and respawn weapon choice, and the
+## animated character.
 ## Run: godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 
 var game: Game
@@ -301,7 +302,25 @@ func _physics_process(_delta: float) -> bool:
 				p.respawn(Transform3D(Basis.IDENTITY, game.ground_point(Vector3(3, 0, 17.5))))
 				_expect(p.weapon is Shotgun, "choosing the shotgun again swaps back")
 				_next()
-		22:
+		22:  # The character: the gun follows the aim, and the Reds' wool is red.
+			if _frames == 1:
+				_place(d, Vector3(-5, 0, 19.5), 0.7)
+			d.look_pitch = 0.5
+			d.in_move = Vector2(0.7, 0.7)
+			d.global_position = game.ground_point(Vector3(-5, 0, 19.5))
+			if _frames == 30:
+				d.in_move = Vector2.ZERO
+				var fwd := -d.model._gun.global_transform.basis.z
+				var yaw_err := absf(Vector2(fwd.x, fwd.z).angle_to(Vector2(-sin(d.look_yaw), -cos(d.look_yaw))))
+				_expect(absf(asin(fwd.y) - 0.5) < 0.05 and yaw_err < 0.05, "a running soldier's gun points where it aims (pitch %.2f for 0.50)" % asin(fwd.y))
+				var red := false
+				for mi in d.model.find_children("*", "MeshInstance3D", true, false):
+					for i in (mi as MeshInstance3D).mesh.get_surface_count():
+						var m := (mi as MeshInstance3D).get_surface_override_material(i) as BaseMaterial3D
+						red = red or (m != null and m.albedo_color.r > 0.4 and m.albedo_color.g < 0.2)
+				_expect(d.team == GameConfig.TEAM_RED and red, "the Reds wear red wool")
+				_next()
+		23:
 			print("MECHANICS TEST ", "PASSED" if _failures.is_empty() else "FAILED")
 			quit(0 if _failures.is_empty() else 1)
 			return true

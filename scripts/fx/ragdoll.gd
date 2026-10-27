@@ -1,32 +1,47 @@
 class_name Ragdoll
 extends Node3D
 ## Halo 2 handed its dead to Havok: the body goes limp and is thrown along the
-## killing shot, hardest by a point-blank shotgun. This copies a soldier's
-## primitive parts onto jointed rigid bodies that only collide with the level.
+## killing shot, hardest by a point-blank shotgun. A copy of the soldier's
+## character takes its last pose, then one rigid capsule per limb segment
+## moves its bones. The capsules collide only with the level.
 
-# part -> [centre in the model's part frame, collision box (radius for the head), mass, share of the fling]
-const PARTS := {
-	"torso": [Vector3(0, 1.1, 0), Vector3(0.48, 1.1, 0.34), 24.0, 1.0],
-	"head": [Vector3(0, 0.62, 0), Vector3(0.15, 0, 0), 5.0, 1.0],
-	"leg_l": [Vector3(0, -0.45, 0), Vector3(0.18, 0.9, 0.22), 9.0, 0.55],
-	"leg_r": [Vector3(0, -0.45, 0), Vector3(0.18, 0.9, 0.22), 9.0, 0.55],
-	"arm_l": [Vector3(-0.31, 0.13, 0), Vector3(0.12, 0.6, 0.12), 4.0, 0.9],
-	"arm_r": [Vector3(0.31, 0.13, 0), Vector3(0.12, 0.6, 0.12), 4.0, 0.9],
+# segment -> [bone it moves, bone at its far end, radius, mass, share of the fling]
+const SEGMENTS := {
+	"torso": ["Hips", "Neck", 0.16, 20.0, 1.0],
+	"head": ["Head", "HeadTop_End", 0.11, 4.0, 1.0],
+	"arm_l": ["LeftArm", "LeftForeArm", 0.06, 2.5, 0.9],
+	"fore_l": ["LeftForeArm", "LeftHandMiddle1", 0.05, 2.0, 0.9],
+	"arm_r": ["RightArm", "RightForeArm", 0.06, 2.5, 0.9],
+	"fore_r": ["RightForeArm", "RightHandMiddle1", 0.05, 2.0, 0.9],
+	"thigh_l": ["LeftUpLeg", "LeftLeg", 0.085, 7.0, 0.6],
+	"shin_l": ["LeftLeg", "LeftFoot", 0.065, 4.0, 0.5],
+	"thigh_r": ["RightUpLeg", "RightLeg", 0.085, 7.0, 0.6],
+	"shin_r": ["RightLeg", "RightFoot", 0.065, 4.0, 0.5],
 }
-# [parent, child, joint in the child's part frame, swing and twist limits in degrees]
+# [parent, child, "cone", swing, twist] or [parent, child, "hinge", most bend,
+# which way a straight limb bends: +1 elbows (about the right side), -1 knees]
 const JOINTS := [
-	["torso", "head", Vector3(0, 0.52, 0), 35.0, 30.0],
-	["torso", "leg_l", Vector3.ZERO, 55.0, 15.0],
-	["torso", "leg_r", Vector3.ZERO, 55.0, 15.0],
-	["torso", "arm_l", Vector3(-0.31, 0.43, 0), 80.0, 40.0],
-	["torso", "arm_r", Vector3(0.31, 0.43, 0), 80.0, 40.0],
+	["torso", "head", "cone", 35.0, 30.0],
+	["torso", "arm_l", "cone", 80.0, 40.0],
+	["torso", "arm_r", "cone", 80.0, 40.0],
+	["torso", "thigh_l", "cone", 55.0, 15.0],
+	["torso", "thigh_r", "cone", 55.0, 15.0],
+	["arm_l", "fore_l", "hinge", 140.0, 1.0],
+	["arm_r", "fore_r", "hinge", 140.0, 1.0],
+	["thigh_l", "shin_l", "hinge", 135.0, -1.0],
+	["thigh_r", "shin_r", "hinge", 135.0, -1.0],
 ]
+const SINK_TIME := 1.0  # seconds spent sinking out of sight at the end
 
 static var _live := []
 static var _material: PhysicsMaterial
 
-var _bodies := {}  # part -> RigidBody3D
-var _visuals := {}  # part -> Node3D, drawn between physics ticks
+var _character: Node3D
+var _skeleton: Skeleton3D
+var _bone := {}  # segment -> bone index
+var _offset := {}  # segment -> bone transform relative to its body
+var _order: Array[String] = []  # segments, parents' bones first
+var _bodies := {}  # segment -> RigidBody3D
 var _prev := {}
 var _curr := {}
 var _age := 0.0
@@ -66,82 +81,94 @@ static func fling_speed(cause: String, damage: float) -> float:
 
 func _build(s: Soldier, dir: Vector3, speed: float, head_hit: bool) -> void:
 	var model := s.model
-	# The model is drawn a fraction of a tick behind; start from the physics pose.
+	var src := model.skeleton
+	# A copy of the character in the soldier's last pose. The model is drawn a
+	# fraction of a tick behind, so start it from the physics position.
+	_character = SoldierModel.make_character(s.team)
+	add_child(_character)
 	var to_world := Transform3D(model.global_transform.basis, s.global_position) * model.global_transform.affine_inverse()
+	_character.global_transform = to_world * (src.get_parent() as Node3D).global_transform
+	_skeleton = _character.get_node("Skeleton3D")
+	for b in src.get_bone_count():
+		_skeleton.set_bone_pose_position(b, src.get_bone_pose_position(b))
+		_skeleton.set_bone_pose_rotation(b, src.get_bone_pose_rotation(b))
+	var skel_xf := _skeleton.global_transform
+
 	var away := Vector3(dir.x, 0, dir.z)
 	if away.length_squared() < 0.01:
 		away = model.global_transform.basis.z  # falls and the like: go over backwards
 	away = away.normalized()
 	var push := away * speed + Vector3.UP * speed * GameConfig.FLING_LIFT
-	var sleeve := StandardMaterial3D.new()
-	sleeve.albedo_color = model.coat
-	sleeve.roughness = 0.85
-	for part: String in PARTS:
-		var spec: Array = PARTS[part]
-		var xf := (to_world * model.part_frame(part).global_transform).translated_local(spec[0])
+	for seg: String in SEGMENTS:
+		var spec: Array = SEGMENTS[seg]
+		var bone := _skeleton.find_bone("mixamorig_" + spec[0])
+		var bone_xf := skel_xf * _skeleton.get_bone_global_pose(bone)
+		var tip := skel_xf * _skeleton.get_bone_global_pose(_skeleton.find_bone("mixamorig_" + spec[1])).origin
+		var along := tip - bone_xf.origin
+		var radius: float = spec[2]
+		var xf := Transform3D(Basis(Quaternion(Vector3.UP, along.normalized())), (bone_xf.origin + tip) * 0.5)
 		var body := RigidBody3D.new()
-		body.name = part
+		body.name = seg
 		body.transform = xf  # the ragdoll sits at the origin, so this is global
 		body.collision_layer = GameConfig.LAYER_DEBRIS
 		body.collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_MOVING
-		body.mass = spec[2]
+		body.mass = spec[3]
 		body.continuous_cd = true
 		body.linear_damp = 0.1
 		body.angular_damp = 2.0
 		body.physics_material_override = _physics_material()
+		var capsule := CapsuleShape3D.new()
+		capsule.radius = radius
+		capsule.height = maxf(along.length() + radius, radius * 2.0)
 		var cs := CollisionShape3D.new()
-		var size: Vector3 = spec[1]
-		if part == "head":
-			var sphere := SphereShape3D.new()
-			sphere.radius = size.x
-			cs.shape = sphere
-		else:
-			var box := BoxShape3D.new()
-			box.size = size
-			cs.shape = box
+		cs.shape = capsule
 		body.add_child(cs)
 		add_child(body)
-		var share: float = spec[3]
-		if head_hit and part == "head":
+		var share: float = spec[4]
+		if head_hit and seg == "head":
 			share *= 1.6
 		body.linear_velocity = s.velocity + push * share
-		if part == "torso" or part == "head":
+		if seg == "torso" or seg == "head":
 			# Even a gentle kill buckles the knees instead of leaving the body balanced.
 			body.linear_velocity += away * 1.2
-		if part == "torso":
+		if seg == "torso":
 			body.angular_velocity = Vector3.UP.cross(away) * 2.5
-		_bodies[part] = body
+		_bodies[seg] = body
+		_bone[seg] = bone
+		_offset[seg] = xf.affine_inverse() * bone_xf
+		_prev[seg] = xf
+		_curr[seg] = xf
+	_order.assign(SEGMENTS.keys())
+	_order.sort_custom(func(a: String, b: String) -> bool: return _bone[a] < _bone[b])
 
-		var vis := Node3D.new()
-		vis.transform = xf
-		add_child(vis)
-		var inv := xf.affine_inverse()
-		for mi: MeshInstance3D in model.part_meshes(part):
-			var copy := mi.duplicate() as MeshInstance3D
-			copy.transform = inv * to_world * mi.global_transform
-			copy.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-			vis.add_child(copy)
-		if part.begins_with("arm"):
-			# The model's arms are posed on the gun; a ragdoll's hang free.
-			var arm := MeshInstance3D.new()
-			var mesh := BoxMesh.new()
-			mesh.size = size
-			arm.mesh = mesh
-			arm.material_override = sleeve
-			vis.add_child(arm)
-		_visuals[part] = vis
-		_prev[part] = xf
-		_curr[part] = xf
-
+	var right := (skel_xf.basis * Vector3.LEFT).normalized()  # the character faces +Z in its skeleton
 	for j: Array in JOINTS:
 		var a: RigidBody3D = _bodies[j[0]]
 		var b: RigidBody3D = _bodies[j[1]]
-		var pivot: Vector3 = (to_world * model.part_frame(j[1]).global_transform) * (j[2] as Vector3)
-		var joint := ConeTwistJoint3D.new()
-		# The twist axis (local X) runs from the joint out along the child limb.
-		joint.transform = Transform3D(Basis(Quaternion(Vector3.RIGHT, (b.position - pivot).normalized())), pivot)
-		joint.set_param(ConeTwistJoint3D.PARAM_SWING_SPAN, deg_to_rad(j[3]))
-		joint.set_param(ConeTwistJoint3D.PARAM_TWIST_SPAN, deg_to_rad(j[4]))
+		var pivot := skel_xf * _skeleton.get_bone_global_pose(_bone[j[1]]).origin
+		var child_dir := (b.position - pivot).normalized()
+		var joint: Joint3D
+		if j[2] == "cone":
+			# The twist axis (local X) runs from the joint out along the child limb.
+			var cone := ConeTwistJoint3D.new()
+			cone.transform = Transform3D(Basis(Quaternion(Vector3.RIGHT, child_dir)), pivot)
+			cone.set_param(ConeTwistJoint3D.PARAM_SWING_SPAN, deg_to_rad(j[3]))
+			cone.set_param(ConeTwistJoint3D.PARAM_TWIST_SPAN, deg_to_rad(j[4]))
+			joint = cone
+		else:
+			# The hinge axis (local Z) is the one the limb is already bent about,
+			# so the limits are measured from its bend at the moment of death.
+			# Godot counts the hinge angle the other way: bending is negative.
+			var parent_dir := (pivot - a.position).normalized()
+			var axis := parent_dir.cross(child_dir)
+			var bent := atan2(axis.length(), parent_dir.dot(child_dir))
+			axis = axis.normalized() if axis.length() > 0.05 else right * float(j[4])
+			var hinge := HingeJoint3D.new()
+			hinge.transform = Transform3D(Basis(Quaternion(Vector3.BACK, axis)), pivot)
+			hinge.set_flag(HingeJoint3D.FLAG_USE_LIMIT, true)
+			hinge.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, bent - deg_to_rad(j[3]))
+			hinge.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, bent)
+			joint = hinge
 		joint.node_a = NodePath("../" + a.name)
 		joint.node_b = NodePath("../" + b.name)
 		add_child(joint)
@@ -161,14 +188,15 @@ func torso_position() -> Vector3:
 
 ## Where the death camera looks.
 func focus() -> Vector3:
-	return (_visuals["torso"] as Node3D).global_position
+	var f := Engine.get_physics_interpolation_fraction()
+	return (_prev["torso"] as Transform3D).origin.lerp((_curr["torso"] as Transform3D).origin, f)
 
 
 func _physics_process(delta: float) -> void:
 	_age += delta
-	for part: String in _bodies:
-		_prev[part] = _curr[part]
-		_curr[part] = (_bodies[part] as RigidBody3D).global_transform
+	for seg: String in _bodies:
+		_prev[seg] = _curr[seg]
+		_curr[seg] = (_bodies[seg] as RigidBody3D).global_transform
 	if _age > GameConfig.RAGDOLL_LIFETIME or torso_position().y < GameConfig.KILL_Y:
 		queue_free()
 	elif not _frozen:
@@ -191,11 +219,15 @@ func _settle(delta: float) -> void:
 
 
 func _process(_delta: float) -> void:
+	var sink := clampf((_age - GameConfig.RAGDOLL_LIFETIME + SINK_TIME) / SINK_TIME, 0.0, 1.0)
+	if sink > 0.0:
+		# Frozen by now: the posed body just sinks out of sight.
+		_character.position.y = -0.7 * sink
+		return
+	if _frozen and _prev["torso"] == _curr["torso"]:
+		return
 	var f := Engine.get_physics_interpolation_fraction()
-	# Shrink away over the last moments rather than popping out.
-	var k := clampf((GameConfig.RAGDOLL_LIFETIME - _age) / 0.4, 0.01, 1.0)
-	for part: String in _visuals:
-		var xf: Transform3D = (_prev[part] as Transform3D).interpolate_with(_curr[part], f)
-		if k < 1.0:
-			xf.basis = xf.basis.scaled(Vector3.ONE * k)
-		(_visuals[part] as Node3D).transform = xf
+	var to_skel := _skeleton.global_transform.affine_inverse()
+	for seg in _order:
+		var body_xf: Transform3D = (_prev[seg] as Transform3D).interpolate_with(_curr[seg], f)
+		_skeleton.set_bone_global_pose(_bone[seg], (to_skel * body_xf * _offset[seg]).orthonormalized())

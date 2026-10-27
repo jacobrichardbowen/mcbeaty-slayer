@@ -6,9 +6,10 @@ fight over one machine gun at the top of the Big Tower. Whoever holds the gun
 controls most of the map, so the other team has to storm the tower along the
 side paths.
 
-Teams are loosely Russian Civil War: **Whites** in pale greatcoats and peaked
-caps, **Reds** in red coats and pointed *budenovka* hats. The turret is a
-Maxim M1910 on a wheeled Sokolov mount. All models are crude primitives.
+Teams are loosely Russian Civil War, **Whites** against **Reds**. Both teams
+use the same custom soldier character, animated with Mixamo clips; the Reds'
+white wool is dyed red. The turret is a Maxim M1910 on a wheeled Sokolov
+mount. The map and the guns are still crude primitives.
 
 ![The Big Tower's Maxim looking over the dish](docs/maxim_view.jpg)
 
@@ -154,6 +155,37 @@ in real geometry later should be close to drop-in: provide meshes and
 colliders, spawn points, routes and the turret transform the way
 [`scripts/level/ascension.gd`](scripts/level/ascension.gd) does.
 
+## The soldier character
+
+The soldiers are `Soldier_White_A_v005_JBO.fbx`, rigged with Mixamo's
+skeleton, in [`assets/characters/soldier/`](assets/characters/soldier/). Godot
+imports the FBX files directly. From the Mixamo Shooter Pack the game uses six
+clips, in `anims/` there:
+
+| Clip | Used for |
+|---|---|
+| rifle aiming idle | standing, and the upper body at all times so the gun stays up |
+| rifle run | running forwards |
+| run backwards | backpedalling |
+| strafe left / strafe right | sidestepping (renamed from `strafe (2)` and `strafe`) |
+| jump forward | one frame, the top of the leap, held while airborne |
+
+At load the clips are made to run in place, loop cleanly and share one cycle
+length and starting foot, so they blend by direction. Playback speeds up to
+match how fast the soldier is moving. After the clips play, the spine turns
+so the gun (placed between the hands) points exactly where the soldier aims.
+The pack has no crouch clips, so crouching lowers the hips and bends the knees
+to keep the feet where the clip put them. Mixamo crouch clips would look
+better if you want to add them later.
+
+On death, a copy of the character takes the soldier's last pose. Ten capsules
+(torso, head, upper arms, forearms, thighs, shins) then move its bones. Knees
+and elbows are hinges, so they only bend the natural way.
+
+To update the character, replace the FBX with a new export under the same
+name. It has to keep the Mixamo rig, and the Reds' dye looks for a material
+whose name starts with `White Wool`.
+
 ## Bots
 
 The bots are deliberately rudimentary. They fight enemies within about 16 m
@@ -177,8 +209,8 @@ run `godot --headless --path . --import` once first):
 
 ```
 # Weapons (shotgun and rifle), ragdolls, melee, jump height, fall damage, the
-# turret's arc and lethality, the neutral start, and every bunker-control and
-# spawn rule
+# turret's arc and lethality, the neutral start, every bunker-control and
+# spawn rule, and that the character's gun points where it aims
 godot --headless --path . --fixed-fps 60 -s tests/mechanics_test.gd
 
 # A 300 s bot match: navmesh connectivity, a bot mans the Maxim, kills happen,
@@ -201,6 +233,8 @@ scripts/
   level/ascension.gd        the Ascension blockout, spawns, routes, navmesh
   level/level_builder.gd    primitive/mesh/collision helpers
   actors/soldier.gd         Halo-style movement, damage, melee, mounting
+  actors/soldier_model.gd   the animated character: blending, aim, crouch, guns in hand
+  actors/soldier_anims.gd   turns the Mixamo clips into in-place, in-step loops
   actors/player_controller.gd  input, cameras, shotgun viewmodel
   actors/bot_brain.gd       rudimentary AI
   weapons/weapon.gd         ammo/reload/cooldown shared by the hand-held guns
@@ -208,6 +242,7 @@ scripts/
   weapons/rifle.gd          semi-auto Mosin: bloom, headshots, clip reload, zoom
   weapons/maxim_turret.gd   the Tower of Power
   ui/hud.gd                 Halo 2-style HUD, tracker, kill feed
-  fx/ragdoll.gd             limp bodies thrown by the killing shot
+  fx/ragdoll.gd             limp bodies thrown by the killing shot, on the character's skeleton
   fx/                       particles, tracers and synthesized sounds (no asset files)
+assets/characters/soldier/  the character and the six clips it uses
 ```

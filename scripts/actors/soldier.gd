@@ -171,7 +171,6 @@ func _physics_process(delta: float) -> void:
 	if global_position.y < GameConfig.KILL_Y:
 		_fell_off_map()
 	curr_position = global_position
-	model.animate(self, delta)
 
 
 func _move(delta: float) -> void:
