@@ -80,8 +80,8 @@ turret placed in one of the towers.
 - **Shotgun**: Halo 2's own numbers. 12 shells and 10 pellets, and any 3
   pellets kill. The spread is wide, so a shot is a sure kill to about 5 m,
   90% at 6 m, a coin flip at 9 m, and only the odd lucky kill at 12–15 m.
-  Pellets lose damage past 15 m and stop at 24 m. Shell-by-shell reload that
-  you can cancel by firing. The red reticle comes on within 10 m, and the ring
+  Pellets lose damage past 15 m and stop at 24 m. One shot a second, and a
+  shell-by-shell reload at 0.6 s a shell that you can cancel by firing. The red reticle comes on within 10 m, and the ring
   on screen shows the real spread.
 - **Mosin-Nagant** (prototype): semi-automatic, one round per trigger pull,
   5-round stripper clip, about 0.4 s between shots. Two body shots kill, one
