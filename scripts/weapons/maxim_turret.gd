@@ -159,6 +159,9 @@ func _fire(s: Soldier) -> void:
 	var r := get_world_3d().direct_space_state.intersect_ray(q)
 	var fx_root := s.fx_root()
 	var end := from + dir * GameConfig.MG_RANGE
+	if Net.online():
+		Net.instance.send(Net.Ev.MG_FIRED, [r.position if not r.is_empty() else end,
+			0 if r.is_empty() else (2 if r.collider is Soldier else 1), r.normal if not r.is_empty() else Vector3.UP])
 	if not r.is_empty():
 		end = r.position
 		var col: Object = r.collider
@@ -172,6 +175,45 @@ func _fire(s: Soldier) -> void:
 	if not _bursting:
 		_start_burst(s)
 	s.on_turret_fired()
+
+
+# --- Online ---------------------------------------------------------------------------
+
+## Whether a burst is sounding (shared with other machines).
+func is_firing() -> bool:
+	return _bursting
+
+
+## Points the gun where a gunner on another machine has it.
+func set_aim(p_yaw: float, p_pitch: float) -> void:
+	yaw = p_yaw
+	pitch = p_pitch
+	_yaw_node.rotation.y = yaw
+	_pitch_node.rotation.x = pitch
+
+
+## Starts or ends the burst sound for a gunner on another machine.
+func set_remote_firing(on: bool) -> void:
+	if on and not _bursting and gunner:
+		_start_burst(gunner)
+	elif not on and _bursting:
+		_end_burst()
+
+
+## Shows a round fired on another machine (it already did the damage).
+func net_fired(end: Vector3, struck: int, normal: Vector3) -> void:
+	var root := get_parent().get("fx_root") as Node3D
+	if root == null:
+		return
+	var from := muzzle_position()
+	if struck == 2:
+		Fx.blood(root, end, (end - from).normalized())
+	elif struck == 1:
+		Fx.impact(root, end, normal)
+	Fx.tracer(root, from, end)
+	Fx.flash(root, from + (end - from).normalized() * 0.1, 3.0, 0.3)
+	if gunner:
+		gunner.last_fire_time = gunner.now()
 
 
 # --- Model: Sokolov wheeled mount with gun shield -------------------------------------

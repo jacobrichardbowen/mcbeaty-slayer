@@ -230,7 +230,7 @@ func _animate(s: Soldier, delta: float) -> void:
 	var local := Vector2(s.velocity.dot(yaw_basis.x), s.velocity.dot(-yaw_basis.z))
 	var speed := local.length()
 	var top_speed := GameConfig.CROUCH_SPEED if s.crouched else GameConfig.RUN_SPEED
-	var on_floor := s.is_on_floor() or s.turret != null
+	var on_floor := s.on_ground() or s.turret != null
 	var blend := Vector2.ZERO
 	var rate := 1.0
 	if speed > 0.3 and on_floor:

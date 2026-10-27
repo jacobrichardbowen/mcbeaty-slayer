@@ -2,6 +2,9 @@ class_name Game
 extends Node3D
 ## One Tower of Power match: team slayer, no shields, shotguns only, one Maxim
 ## gun on the Big Tower. Builds the world, spawns soldiers, keeps score.
+## Online (see Net) the host's copy runs the match; a client's copy shows it,
+## driven by the host's snapshots and events, with its own soldier played
+## locally.
 
 signal exit_requested
 signal restart_requested
@@ -21,12 +24,15 @@ var time_left := GameConfig.TIME_LIMIT
 var over := false
 var winner := -1
 var bunker: BunkerControl
+var quit_by_player := false  # left from the pause menu (rather than the match ending)
 
 var _soldier_root: Node3D
 var _bots: Array[BotBrain] = []
 var _respawn_at := {}
 var _multi := {}
 var _end_timer := 0.0
+var _pickups := {}  # id -> AmmoPickup, the same ids on every machine
+var _next_pickup := 0
 
 
 func start() -> void:
@@ -70,17 +76,22 @@ func start() -> void:
 	_soldier_root = Node3D.new()
 	_soldier_root.name = "Soldiers"
 	add_child(_soldier_root)
-	_spawn_soldier(GameConfig.TEAM_WHITE, "You", true)
-	for i in GameConfig.white_bots:
-		_spawn_soldier(GameConfig.TEAM_WHITE, GameConfig.WHITE_NAMES[i % GameConfig.WHITE_NAMES.size()], false)
-	for i in GameConfig.red_bots:
-		_spawn_soldier(GameConfig.TEAM_RED, GameConfig.RED_NAMES[i % GameConfig.RED_NAMES.size()], false)
+	if Net.online():
+		_spawn_roster(Net.instance)
+	else:
+		_spawn_soldier(GameConfig.TEAM_WHITE, "You", "player").respawn(_choose_spawn(GameConfig.TEAM_WHITE))
+		for i in GameConfig.white_bots:
+			_spawn_soldier(GameConfig.TEAM_WHITE, GameConfig.WHITE_NAMES[i % GameConfig.WHITE_NAMES.size()], "bot").respawn(_choose_spawn(GameConfig.TEAM_WHITE))
+		for i in GameConfig.red_bots:
+			_spawn_soldier(GameConfig.TEAM_RED, GameConfig.RED_NAMES[i % GameConfig.RED_NAMES.size()], "bot").respawn(_choose_spawn(GameConfig.TEAM_RED))
 
 	hud = Hud.new()
 	hud.game = self
 	add_child(hud)
 	pause_menu = PauseMenu.new()
-	pause_menu.quit_requested.connect(func() -> void: exit_requested.emit())
+	pause_menu.quit_requested.connect(func() -> void:
+		quit_by_player = true
+		exit_requested.emit())
 	pause_menu.restart_requested.connect(func() -> void: restart_requested.emit())
 	add_child(pause_menu)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -112,6 +123,13 @@ func ground_point(p: Vector3) -> Vector3:
 	return r.position if not r.is_empty() else p
 
 
+func soldier_by_id(id: int) -> Soldier:
+	for s in soldiers:
+		if s.net_id == id:
+			return s
+	return null
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb and mb.pressed and not input_blocked() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -133,11 +151,16 @@ func _physics_process(delta: float) -> void:
 		return
 	time += delta
 	time_left -= delta
+	if Net.is_client():
+		return  # the host runs the rules
 	bunker.update(delta, soldiers, turret.gunner)
 	for s in _respawn_at.keys():
 		if time >= float(_respawn_at[s]):
 			_respawn_at.erase(s)
-			(s as Soldier).respawn(_choose_spawn((s as Soldier).team))
+			var xf := _choose_spawn((s as Soldier).team)
+			(s as Soldier).respawn(xf)
+			if Net.is_host():
+				Net.instance.send(Net.Ev.RESPAWN, [(s as Soldier).net_id, xf])
 	if time_left <= 0.0:
 		_end_match(0 if scores[0] > scores[1] else (1 if scores[1] > scores[0] else -1))
 
@@ -186,34 +209,64 @@ func _build_environment() -> void:
 	add_child(sun)
 
 
-func _spawn_soldier(team: int, soldier_name: String, is_player: bool) -> void:
+## role: "player" (played here), "bot" (run here) or "puppet" (run elsewhere).
+func _spawn_soldier(team: int, soldier_name: String, role: String, peer := 1) -> Soldier:
 	var s := Soldier.new()
-	s.setup(self, team, soldier_name, is_player)
-	if is_player:
+	s.setup(self, team, soldier_name, role == "player")
+	s.net_id = soldiers.size()
+	s.owner_peer = peer
+	s.puppet = role == "puppet"
+	if role == "player":
 		s.loadout = GameConfig.player_loadout
 	_soldier_root.add_child(s)
 	s.died.connect(_on_soldier_died)
 	soldiers.append(s)
-	if is_player:
+	if role == "player":
 		player = s
 		player_ctrl = PlayerController.new()
 		player_ctrl.name = "PlayerController"
 		player_ctrl.setup(self, s)
 		add_child(player_ctrl)
-	else:
-		var bot := BotBrain.new(s, self)
-		bot.hunter = _bots.filter(func(b: BotBrain) -> bool: return b.s.team == team).size() % 3 != 0
-		_bots.append(bot)
-	s.respawn(_choose_spawn(team))
+	elif role == "bot":
+		_add_bot(s)
+	return s
 
 
-func _add_pickup(pos: Vector3, amount: int, dropped: bool, kind := "shotgun") -> void:
+func _add_bot(s: Soldier) -> void:
+	var bot := BotBrain.new(s, self)
+	bot.hunter = _bots.filter(func(b: BotBrain) -> bool: return b.s.team == s.team).size() % 3 != 0
+	_bots.append(bot)
+
+
+## Online: everyone builds the same soldiers in the same order. The host
+## picks the first spawns and then tells the others to begin.
+func _spawn_roster(net: Net) -> void:
+	net.game = self
+	var me := net.my_peer()
+	for r: Dictionary in net.roster:
+		var peer: int = r["peer"]
+		var role := "player" if peer == me else ("bot" if peer == 0 and Net.is_host() else "puppet")
+		var s := _spawn_soldier(r["team"], r["name"], role, peer if peer > 0 else 1)
+		if Net.is_host():
+			r["xf"] = _choose_spawn(s.team)
+		s.respawn(r["xf"])
+	if Net.is_host():
+		net.send_start()
+
+
+func _add_pickup(pos: Vector3, amount: int, dropped: bool, kind := "shotgun", id := -1) -> void:
 	var p := AmmoPickup.new()
 	p.amount = amount
 	p.dropped = dropped
 	p.kind = kind
 	p.position = pos
+	p.id = id if id >= 0 else _next_pickup
+	_next_pickup = maxi(_next_pickup, p.id + 1)
+	_pickups[p.id] = p
+	p.tree_exiting.connect(func() -> void: _pickups.erase(p.id))
 	add_child(p)
+	if dropped and Net.is_host():
+		Net.instance.send(Net.Ev.DROP, [p.id, pos, amount, kind])
 
 
 ## The bunker holders spawn at the bunker, everyone else on the far side.
@@ -257,6 +310,12 @@ func _pick_spawn(team: int, side: String) -> Transform3D:
 # --- Scoring --------------------------------------------------------------------------
 
 func _on_soldier_died(victim: Soldier, killer: Soldier, cause: String) -> void:
+	if victim == player:
+		hud.killed_by = killer.display_name if killer and killer != victim else ""
+	if Net.is_client():
+		# The host keeps score; this just counts down our own respawn.
+		_respawn_at[victim] = time + GameConfig.RESPAWN_TIME
+		return
 	victim.deaths += 1
 	victim.spree = 0
 	var msg := ""
@@ -278,9 +337,7 @@ func _on_soldier_died(victim: Soldier, killer: Soldier, cause: String) -> void:
 		msg = "%s %s %s" % [killer.display_name, verb, victim.display_name]
 		color = GameConfig.TEAM_COLORS[killer.team]
 		_track_medals(killer)
-	hud.feed(msg, color)
-	if victim == player:
-		hud.killed_by = killer.display_name if killer and killer != victim else ""
+	_feed(msg, color)
 	_respawn_at[victim] = time + GameConfig.RESPAWN_TIME
 	var ammo := victim.weapon.mag + victim.weapon.reserve
 	if ammo > 0 and cause != "fell":
@@ -290,30 +347,48 @@ func _on_soldier_died(victim: Soldier, killer: Soldier, cause: String) -> void:
 			_end_match(t)
 
 
+## A kill-feed line, for everyone.
+func _feed(msg: String, color: Color) -> void:
+	hud.feed(msg, color)
+	if Net.is_host():
+		Net.instance.send(Net.Ev.FEED, [msg, color])
+
+
 func _track_medals(k: Soldier) -> void:
 	var m: Dictionary = _multi.get(k, {"t": -100.0, "n": 0})
 	m["n"] = int(m["n"]) + 1 if time - float(m["t"]) <= GameConfig.MULTIKILL_WINDOW else 1
 	m["t"] = time
 	_multi[k] = m
-	if k != player:
+	var human_elsewhere := k.puppet and Net.is_host()
+	if k != player and not human_elsewhere:
 		return
 	var multi := ["", "", "Double Kill", "Triple Kill", "Killtacular", "Killtrocity", "Killimanjaro", "Killtastrophe", "Killpocalypse", "Killionaire"]
-	var n := int(m["n"])
-	if n >= 2:
-		hud.announce(multi[mini(n, multi.size() - 1)])
 	var sprees := {5: "Killing Spree", 10: "Killing Frenzy", 15: "Running Riot", 20: "Rampage", 25: "Untouchable", 30: "Invincible"}
+	var n := int(m["n"])
+	var calls := []
+	if n >= 2:
+		calls.append(multi[mini(n, multi.size() - 1)])
 	if sprees.has(k.spree):
-		hud.announce(sprees[k.spree])
+		calls.append(sprees[k.spree])
+	for text: String in calls:
+		if k == player:
+			hud.announce(text)
+		else:
+			Net.instance.send(Net.Ev.ANNOUNCE, [text], k.owner_peer)
 
 
 func _on_gunner_changed(s: Soldier) -> void:
+	if Net.is_client():
+		return
+	if Net.is_host():
+		Net.instance.send(Net.Ev.MOUNTED, [s.net_id if s else -1])
 	if s:
-		hud.feed("%s manned the Maxim" % s.display_name, GameConfig.TEAM_COLORS[s.team])
+		_feed("%s manned the Maxim" % s.display_name, GameConfig.TEAM_COLORS[s.team])
 
 
 func _on_holder_changed(team: int, _reason: String) -> void:
 	level.set_flag_team(team)
-	hud.feed("%s took the bunker and now spawn there" % GameConfig.TEAM_NAMES[team], GameConfig.TEAM_COLORS[team])
+	_feed("%s took the bunker and now spawn there" % GameConfig.TEAM_NAMES[team], GameConfig.TEAM_COLORS[team])
 	if player:
 		hud.announce("Bunker taken" if team == player.team else "Bunker lost")
 
@@ -325,3 +400,191 @@ func _end_match(team: int) -> void:
 	winner = team
 	_end_timer = 8.0
 	hud.show_end("%s WIN" % GameConfig.TEAM_NAMES[team].to_upper() if team >= 0 else "DRAW")
+	if Net.is_host():
+		Net.instance.send(Net.Ev.END, [team])
+
+
+# --- Online -----------------------------------------------------------------------------
+
+## Host: the whole match as it stands, 20 times a second.
+func pack_snapshot() -> PackedByteArray:
+	var buf := StreamPeerBuffer.new()
+	buf.put_double(Net.clock())
+	buf.put_float(time_left)
+	buf.put_16(scores[0])
+	buf.put_16(scores[1])
+	buf.put_8(bunker.holder)
+	buf.put_8(bunker.challenger)
+	buf.put_u8(int(clampf(bunker.progress, 0.0, 1.0) * 255.0))
+	NetCodec.put_pitch(buf, turret.yaw)
+	NetCodec.put_pitch(buf, turret.pitch)
+	buf.put_u8(1 if turret.is_firing() else 0)
+	buf.put_u8(soldiers.size())
+	for s in soldiers:
+		var latest := s.latest_net_state() if s.puppet and s.alive else {}
+		if latest.is_empty():
+			NetCodec.put_motion(buf, s, NetCodec.flags_of(s))
+		else:
+			# A friend's newest state goes straight on, not our view of it a moment behind.
+			NetCodec.put_motion(buf, s, int(latest["flags"]) | NetCodec.ALIVE, latest)
+		buf.put_u8(int(clampf(s.health, 0.0, 255.0)))
+		buf.put_16(s.kills)
+		buf.put_u16(s.deaths)
+	return buf.data_array
+
+
+## Client: applies the host's snapshot.
+func apply_snapshot(data: PackedByteArray) -> void:
+	var buf := StreamPeerBuffer.new()
+	buf.data_array = data
+	var sent := buf.get_double()
+	var at := sent + Net.instance.clock_offset(1, sent)
+	time_left = buf.get_float()
+	scores = [buf.get_16(), buf.get_16()]
+	var holder := buf.get_8()
+	bunker.challenger = buf.get_8()
+	bunker.progress = buf.get_u8() / 255.0
+	if holder != bunker.holder:
+		bunker.holder = holder
+		level.set_flag_team(holder)
+		if holder >= 0:
+			hud.announce("Bunker taken" if holder == player.team else "Bunker lost")
+	var tyaw := NetCodec.get_pitch(buf)
+	var tpitch := NetCodec.get_pitch(buf)
+	var firing := buf.get_u8() == 1
+	if turret.gunner and turret.gunner != player:
+		turret.set_aim(tyaw, tpitch)
+		turret.set_remote_firing(firing)
+	for i in buf.get_u8():
+		var st := NetCodec.get_motion(buf)
+		var health := float(buf.get_u8())
+		var kills := buf.get_16()
+		var deaths := buf.get_u16()
+		var s := soldier_by_id(st["id"])
+		if s == null:
+			continue
+		s.kills = kills
+		s.deaths = deaths
+		if s.alive:
+			s.health = health
+		if s.puppet:
+			s.push_net_state(at, st)
+
+
+## Client: our own soldier, 30 times a second.
+func pack_own_state() -> PackedByteArray:
+	var buf := StreamPeerBuffer.new()
+	buf.put_double(Net.clock())
+	var gunning := turret.gunner == player
+	NetCodec.put_motion(buf, player, NetCodec.flags_of(player, gunning and turret.is_firing()))
+	buf.put_u8(1 if gunning else 0)
+	if gunning:
+		NetCodec.put_pitch(buf, turret.yaw)
+		NetCodec.put_pitch(buf, turret.pitch)
+	return buf.data_array
+
+
+## Host: a player's update about their own soldier.
+func apply_player_state(peer: int, data: PackedByteArray) -> void:
+	var buf := StreamPeerBuffer.new()
+	buf.data_array = data
+	var sent := buf.get_double()
+	var at := sent + Net.instance.clock_offset(peer, sent)
+	var st := NetCodec.get_motion(buf)
+	var s := soldier_by_id(st["id"])
+	if s == null or s.owner_peer != peer or not s.puppet:
+		return
+	if s.alive:
+		s.push_net_state(at, st)
+	if buf.get_u8() == 1 and turret.gunner == s:
+		turret.set_aim(NetCodec.get_pitch(buf), NetCodec.get_pitch(buf))
+		turret.set_remote_firing(int(st["flags"]) & NetCodec.FIRING != 0)
+
+
+## A game event from another machine (see Net.Ev).
+func on_net_event(kind: int, args: Array, sender: int) -> void:
+	var host := Net.is_host()
+	match kind:
+		Net.Ev.FIRED:
+			var s := soldier_by_id(args[0])
+			if s and s.puppet:
+				s.net_fired(args[1], args[2], args[3], args[4])
+			Net.instance.relay(kind, args, sender)
+		Net.Ev.MG_FIRED:
+			turret.net_fired(args[0], args[1], args[2])
+			Net.instance.relay(kind, args, sender)
+		Net.Ev.MELEE:
+			var s := soldier_by_id(args[0])
+			if s and s.puppet:
+				s.melee_time = time
+				Sfx.play_3d(s, "swing", s.eye_position(), -8.0)
+			Net.instance.relay(kind, args, sender)
+		Net.Ev.PICKUP:
+			if _pickups.has(args[0]):
+				(_pickups[args[0]] as AmmoPickup).take()
+			Net.instance.relay(kind, args, sender)
+		Net.Ev.HIT:
+			# A player's hit, or their own fall. Only their own soldier's shots count.
+			var victim := soldier_by_id(args[0])
+			var attacker := soldier_by_id(args[2])
+			var shooter_ok := attacker != null and attacker.owner_peer == sender
+			var own_fall := attacker == null and victim != null and victim.owner_peer == sender
+			if host and victim and (shooter_ok or own_fall):
+				if args[3] == "melee":
+					Sfx.play_3d(victim, "melee_hit", args[4], 0.0)
+					Fx.blood(fx_root, args[4], args[5])
+				victim.take_damage(args[1], attacker, args[3], args[4], args[5])
+		Net.Ev.KILL:
+			var victim := soldier_by_id(args[0])
+			if host and victim and victim.owner_peer == sender:
+				victim.die(soldier_by_id(args[1]), args[2], Vector3.DOWN)
+		Net.Ev.MOUNT:
+			var s := soldier_by_id(args[0])
+			if host and s and s.owner_peer == sender:
+				if args[1] and turret.can_mount(s):
+					turret.mount(s)
+				elif not args[1] and turret.gunner == s:
+					turret.dismount()
+		Net.Ev.DAMAGED:
+			var victim := soldier_by_id(args[0])
+			if victim:
+				# Our own melee already made its sound and blood here.
+				if args[3] == "melee" and soldier_by_id(args[2]) != player:
+					Sfx.play_3d(victim, "melee_hit", args[4], 0.0)
+					Fx.blood(fx_root, args[4], Vector3.UP)
+				victim.net_damaged(args[1], soldier_by_id(args[2]), args[4], args[5])
+		Net.Ev.DIED:
+			var victim := soldier_by_id(args[0])
+			if victim:
+				victim.net_die(soldier_by_id(args[1]), args[2], args[3], args[4])
+		Net.Ev.RESPAWN:
+			var s := soldier_by_id(args[0])
+			if s:
+				s.respawn(args[1])
+				_respawn_at.erase(s)
+		Net.Ev.MOUNTED:
+			var s := soldier_by_id(args[0])
+			if s == null:
+				turret.dismount()
+			elif turret.gunner != s:
+				turret.dismount()
+				turret.mount(s)
+		Net.Ev.DROP:
+			_add_pickup(args[1], args[2], true, args[3], args[0])
+		Net.Ev.FEED:
+			hud.feed(args[0], args[1])
+		Net.Ev.ANNOUNCE:
+			hud.announce(args[0])
+		Net.Ev.END:
+			_end_match(args[0])
+
+
+## Host: a player left mid-match; a bot takes over their soldier.
+func remove_peer(peer: int, who: String) -> void:
+	for s in soldiers:
+		if s.owner_peer == peer and s.puppet:
+			s.puppet = false
+			s.owner_peer = 1
+			s.snap_interpolation()
+			_add_bot(s)
+	_feed("%s left; a bot takes their place" % who, Color(0.8, 0.8, 0.8))

@@ -142,12 +142,15 @@ func _fire() -> void:
 	var fx_root := soldier.fx_root()
 	var end := origin + dir * GameConfig.RF_RANGE
 	soldier.on_weapon_fired()
+	if Net.online():
+		Net.instance.send(Net.Ev.FIRED, [soldier.net_id, "rifle", PackedVector3Array([r.position if not r.is_empty() else end]),
+			PackedByteArray([0 if r.is_empty() else (2 if r.collider is Soldier else 1)]), PackedVector3Array([r.normal if not r.is_empty() else Vector3.UP])])
 	if r.is_empty():
 		Fx.tracer(fx_root, soldier.muzzle_position(), end, Color(1.0, 0.9, 0.7, 0.6))
-		_whiz(origin, end, null)
+		whiz_past(soldier, origin, end, false)
 		return
 	end = r.position
-	_whiz(origin, end, r.collider)
+	whiz_past(soldier, origin, end, r.collider == soldier.local_player())
 	Fx.tracer(fx_root, soldier.muzzle_position(), end, Color(1.0, 0.9, 0.7, 0.6))
 	var col: Object = r.collider
 	if col is Soldier:
@@ -164,9 +167,9 @@ func _fire() -> void:
 
 ## A round that passes close by the player's head, without hitting them,
 ## whizzes past: louder the closer it came, from where it passed.
-func _whiz(from: Vector3, to: Vector3, hit: Object) -> void:
-	var p := soldier.local_player()
-	if p == null or p == soldier or not p.alive or hit == p:
+static func whiz_past(shooter: Soldier, from: Vector3, to: Vector3, hit_player: bool) -> void:
+	var p := shooter.local_player()
+	if p == null or p == shooter or not p.alive or hit_player:
 		return
 	var ear := p.eye_position()
 	var path := to - from

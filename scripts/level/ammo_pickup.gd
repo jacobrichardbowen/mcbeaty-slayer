@@ -8,6 +8,7 @@ var amount := 0  # dropped guns: rounds inside; crates use the taker's crate_amm
 var respawn_time := 25.0
 var dropped := false
 var kind := "shotgun"  # dropped guns only
+var id := -1  # the same on every machine online
 
 var _lifetime := 30.0
 var _active := true
@@ -74,17 +75,25 @@ func _physics_process(delta: float) -> void:
 		_visual.rotation.y += delta * 1.2
 	for b in get_overlapping_bodies():
 		var s := b as Soldier
-		if s == null or not s.alive or s.weapon.ammo_room() <= 0:
+		# Each machine hands out ammo to the soldiers it runs.
+		if s == null or s.puppet or not s.alive or s.weapon.ammo_room() <= 0:
 			continue
 		if dropped and s.weapon.kind != kind:
 			continue
 		if s.weapon.add_ammo(amount if dropped else s.weapon.crate_ammo()) > 0:
 			if s.is_player:
 				Sfx.play_2d(self, "pickup", -6.0)
-			if dropped:
-				queue_free()
-			else:
-				_active = false
-				_cool = respawn_time
-				_visual.visible = false
+			if Net.online():
+				Net.instance.send(Net.Ev.PICKUP, [id])
+			take()
 			return
+
+
+## Gone: a dropped gun for good, a crate until it refills.
+func take() -> void:
+	if dropped:
+		queue_free()
+	elif _active:
+		_active = false
+		_cool = respawn_time
+		_visual.visible = false

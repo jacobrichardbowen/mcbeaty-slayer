@@ -1,6 +1,7 @@
 class_name PauseMenu
 extends CanvasLayer
 ## Esc / Start: pauses the match, frees the mouse, offers look settings.
+## Online the match carries on underneath (nobody can pause everyone).
 
 signal quit_requested
 signal restart_requested
@@ -41,8 +42,12 @@ func _ready() -> void:
 	inv.button_pressed = GameConfig.invert_y
 	inv.toggled.connect(func(on: bool) -> void: GameConfig.invert_y = on)
 	box.add_child(inv)
-	for entry in [["Resume", _close], ["Restart match", func() -> void: _leave(restart_requested)],
-			["Quit to menu", func() -> void: _leave(quit_requested)], ["Quit game", func() -> void: get_tree().quit()]]:
+	var entries := [["Resume", _close], ["Restart match", func() -> void: _leave(restart_requested)],
+			["Quit to menu", func() -> void: _leave(quit_requested)], ["Quit game", func() -> void: get_tree().quit()]]
+	if Net.online():
+		entries.remove_at(1)
+		entries[1][0] = "Leave the game"
+	for entry: Array in entries:
 		var b := Button.new()
 		b.text = entry[0]
 		b.custom_minimum_size = Vector2(0, 40)
@@ -61,7 +66,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _open() -> void:
 	visible = true
-	get_tree().paused = true
+	get_tree().paused = not Net.online()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 

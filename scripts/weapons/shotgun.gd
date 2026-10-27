@@ -117,12 +117,18 @@ func _fire() -> void:
 	var marks := 0
 	var fx_root := soldier.fx_root()
 	var spread := deg_to_rad(GameConfig.SG_SPREAD)
+	var ends := PackedVector3Array()
+	var struck := PackedByteArray()
+	var normals := PackedVector3Array()
 	for i in GameConfig.SG_PELLETS:
 		var dir := cone_direction(fwd, spread)
 		var r := _cast(origin, dir, GameConfig.SG_RANGE)
 		if r.is_empty():
 			continue
 		var pos: Vector3 = r.position
+		ends.append(pos)
+		struck.append(2 if r.collider is Soldier else 1)
+		normals.append(r.normal)
 		var dmg := GameConfig.SG_PELLET_DAMAGE * falloff(origin.distance_to(pos))
 		var col: Object = r.collider
 		if col is Soldier:
@@ -134,5 +140,7 @@ func _fire() -> void:
 			Fx.impact(fx_root, pos, r.normal)
 			marks += 1
 	soldier.on_weapon_fired()
+	if Net.online():
+		Net.instance.send(Net.Ev.FIRED, [soldier.net_id, "shotgun", ends, struck, normals])
 	for target in hits:
 		(target as Soldier).take_damage(hits[target], soldier, "shotgun", (target as Soldier).chest_position(), fwd)

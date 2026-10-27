@@ -2,7 +2,9 @@ class_name Soldier
 extends CharacterBody3D
 ## One combatant, human or bot. A controller (PlayerController or BotBrain)
 ## fills the in_* fields and look angles every physics tick; Soldier does the
-## Halo-style movement, shotgun, melee lunge and turret mounting.
+## Halo-style movement, shotgun, melee lunge and turret mounting. Online, a
+## soldier run by another machine is a puppet: it follows the states that
+## arrive over the network instead.
 
 signal died(victim: Soldier, killer: Soldier, cause: String)
 
@@ -43,6 +45,16 @@ var last_fire_time := -100.0
 var last_attacker: Soldier = null
 var last_attacker_time := -100.0
 var melee_time := -100.0
+
+# Online: who runs this soldier, and the states that drive it as a puppet.
+var net_id := -1
+var owner_peer := 1  # 1 = the host (and its bots)
+var puppet := false
+var _net_states: Array = []  # [local time, state Dictionary], oldest first
+var _net_on_floor := true
+var _net_reloading := false
+var _net_dying := false  # applying a death the host announced
+var _fall_reported := false
 
 # Positions at the start and end of the last physics tick, for smooth cameras.
 var prev_position := Vector3.ZERO
@@ -155,6 +167,12 @@ func interpolated_position() -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	prev_position = global_position
+	if puppet:
+		if alive:
+			_puppet_tick(delta)
+			_regenerate(delta)
+		curr_position = global_position
+		return
 	if not alive:
 		_corpse_physics(delta)
 		curr_position = global_position
@@ -172,11 +190,22 @@ func _physics_process(delta: float) -> void:
 		if in_melee:
 			_try_melee()
 	_handle_action(delta)
-	if now() - last_damage_time > GameConfig.HEALTH_REGEN_DELAY and health < GameConfig.MAX_HEALTH:
-		health = minf(GameConfig.MAX_HEALTH, health + GameConfig.HEALTH_REGEN_RATE * delta)
+	_regenerate(delta)
 	if global_position.y < GameConfig.KILL_Y:
 		_fell_off_map()
 	curr_position = global_position
+
+
+## Health comes back after a while out of harm (the host's count is the
+## one that matters online).
+func _regenerate(delta: float) -> void:
+	if not Net.is_client() and now() - last_damage_time > GameConfig.HEALTH_REGEN_DELAY and health < GameConfig.MAX_HEALTH:
+		health = minf(GameConfig.MAX_HEALTH, health + GameConfig.HEALTH_REGEN_RATE * delta)
+
+
+## True when standing on something (for puppets, as their owner last said).
+func on_ground() -> bool:
+	return _net_on_floor if puppet else is_on_floor()
 
 
 func _move(delta: float) -> void:
@@ -321,6 +350,8 @@ func _try_melee() -> void:
 		return
 	_melee_cd = GameConfig.MELEE_COOLDOWN
 	melee_time = now()
+	if Net.online():
+		Net.instance.send(Net.Ev.MELEE, [net_id])
 	weapon.interrupt(0.45)
 	if controller and controller.has_method("on_melee"):
 		controller.on_melee()
@@ -378,7 +409,11 @@ func _handle_action(delta: float) -> void:
 	if _action_hold < GameConfig.MG_MOUNT_HOLD or _action_used:
 		return
 	_action_used = true
-	if turret:
+	if Net.is_client():
+		# The host decides who gets the gun.
+		if turret or _game.turret.can_mount(self):
+			Net.instance.send(Net.Ev.MOUNT, [net_id, turret == null])
+	elif turret:
 		turret.dismount()
 	elif _game.turret.can_mount(self):
 		_set_crouch(false, true)
@@ -392,7 +427,13 @@ func take_damage(amount: float, attacker: Soldier, cause: String, hit_pos: Vecto
 		return
 	if attacker and attacker != self and attacker.team == team and not GameConfig.FRIENDLY_FIRE:
 		return
+	if Net.is_client():
+		# Our hits (and our own falls) are reported; the host applies them.
+		Net.instance.send(Net.Ev.HIT, [net_id, amount, attacker.net_id if attacker else -1, cause, hit_pos, dir])
+		return
 	health -= amount
+	if Net.is_host():
+		Net.instance.send(Net.Ev.DAMAGED, [net_id, amount, attacker.net_id if attacker else -1, cause, hit_pos, maxf(health, 0.0)])
 	if health > 0.0:
 		_grunt(false)
 	last_damage_time = now()
@@ -409,11 +450,16 @@ func _fell_off_map() -> void:
 	var killer: Soldier = null
 	if last_attacker and now() - last_attacker_time < 5.0:
 		killer = last_attacker
+	if Net.is_client():
+		if not _fall_reported:
+			_fall_reported = true
+			Net.instance.send(Net.Ev.KILL, [net_id, killer.net_id if killer else -1, "fell"])
+		return
 	die(killer, "fell", Vector3.DOWN)
 
 
 func die(killer: Soldier, cause: String, dir := Vector3.ZERO, fling := 0.0) -> void:
-	if not alive:
+	if not alive or (Net.is_client() and not _net_dying):
 		return
 	alive = false
 	health = 0.0
@@ -426,6 +472,8 @@ func die(killer: Soldier, cause: String, dir := Vector3.ZERO, fling := 0.0) -> v
 	ragdoll = Ragdoll.spawn(self, dir, fling, cause == "headshot")
 	model.visible = false
 	velocity = Vector3.ZERO
+	if Net.is_host():
+		Net.instance.send(Net.Ev.DIED, [net_id, killer.net_id if killer else -1, cause, dir, fling])
 	died.emit(self, killer, cause)
 
 
@@ -453,6 +501,8 @@ func respawn(xf: Transform3D) -> void:
 	last_damage_time = -100.0
 	_was_on_floor = true
 	_lunge_target = null
+	_net_states.clear()
+	_fall_reported = false
 	snap_interpolation()
 	if controller and controller.has_method("on_spawned"):
 		controller.on_spawned()
@@ -510,3 +560,121 @@ func on_weapon_fired() -> void:
 func on_turret_fired() -> void:
 	if controller and controller.has_method("on_turret_fired"):
 		controller.on_turret_fired()
+
+
+# --- Online --------------------------------------------------------------------------------
+
+## A state from this soldier's owner, stamped on our clock.
+func push_net_state(at: float, state: Dictionary) -> void:
+	_net_states.append([at, state])
+	if _net_states.size() > 40:
+		_net_states.pop_front()
+
+
+func latest_net_state() -> Dictionary:
+	return _net_states[-1][1] if not _net_states.is_empty() else {}
+
+
+## Puppets are drawn a little in the past, between the two states either
+## side of that moment, so they move smoothly however unevenly states arrive.
+func _puppet_tick(delta: float) -> void:
+	if _net_states.is_empty():
+		return
+	var t := Net.clock() - Net.INTERP_DELAY
+	var a: Array = _net_states[0]
+	var b: Array = a
+	for i in range(1, _net_states.size()):
+		b = _net_states[i]
+		if float(b[0]) >= t:
+			break
+		a = b
+	var sa: Dictionary = a[1]
+	var sb: Dictionary = b[1]
+	var k := 0.0
+	if float(b[0]) > float(a[0]):
+		k = clampf((t - float(a[0])) / (float(b[0]) - float(a[0])), 0.0, 1.0)
+	elif t > float(b[0]):
+		# Out of states: carry on a moment at the last speed.
+		k = 0.0
+		sa = sb.duplicate()
+		sa["pos"] = (sb["pos"] as Vector3) + (sb["vel"] as Vector3) * minf(t - float(b[0]), 0.15)
+	if turret == null:
+		global_position = (sa["pos"] as Vector3).lerp(sb["pos"], k)
+	velocity = (sa["vel"] as Vector3).lerp(sb["vel"], k)
+	look_yaw = lerp_angle(float(sa["yaw"]), float(sb["yaw"]), k)
+	look_pitch = lerpf(float(sa["pitch"]), float(sb["pitch"]), k)
+	var flags: int = sb["flags"]
+	var want_crouch := flags & NetCodec.CROUCHED != 0
+	if want_crouch != crouched:
+		_set_crouch(want_crouch, true)
+	eye_height = GameConfig.CROUCH_EYE if crouched else GameConfig.STAND_EYE
+	_net_on_floor = flags & NetCodec.ON_FLOOR != 0
+	zoomed = flags & NetCodec.ZOOMED != 0
+	set_weapon_kind("rifle" if flags & NetCodec.RIFLE else "shotgun")
+	var reloading := flags & NetCodec.RELOADING != 0
+	if reloading and not _net_reloading:
+		weapon_sound("rifle_reload" if weapon.kind == "rifle" else "rack", -8.0)
+	_net_reloading = reloading
+	while _net_states.size() > 2 and float((_net_states[1] as Array)[0]) < t - 0.5:
+		_net_states.pop_front()
+	if _net_on_floor and not crouched:
+		_step_accum += horizontal_speed() * delta
+		if _step_accum > 2.3:
+			_step_accum = 0.0
+			Sfx.play_3d(self, "step", global_position, -20.0, 0.15, 30.0, 1.0, 3.0)
+
+
+## Swaps the carried gun (puppets follow what their owner carries).
+func set_weapon_kind(kind: String) -> void:
+	if weapon.kind != kind:
+		weapon = make_weapon(kind)
+		loadout = kind
+		model.set_weapon(kind)
+
+
+## Applies a death the host announced.
+func net_die(killer: Soldier, cause: String, dir: Vector3, fling: float) -> void:
+	_net_dying = true
+	die(killer, cause, dir, fling)
+	_net_dying = false
+
+
+## Applies damage the host announced: health, a grunt, the hit flash.
+func net_damaged(amount: float, attacker: Soldier, hit_pos: Vector3, health_after: float) -> void:
+	if not alive:
+		return
+	health = health_after
+	last_damage_time = now()
+	if attacker and attacker != self:
+		last_attacker = attacker
+		last_attacker_time = now()
+	if health > 0.0:
+		_grunt(false)
+	if controller and controller.has_method("on_damaged"):
+		controller.on_damaged(amount, attacker, hit_pos)
+
+
+## Shows a shot fired on another machine: sound, flash, kick, tracer and
+## where each round or pellet struck (0 nothing, 1 the level, 2 a soldier).
+func net_fired(kind: String, ends: PackedVector3Array, struck: PackedByteArray, normals: PackedVector3Array) -> void:
+	last_fire_time = now()
+	model.kick()
+	Sfx.play_3d(self, kind, eye_position(), -2.0, 0.03, 220.0, 1.0, 10.0)
+	var root := fx_root()
+	var muzzle := model.muzzle_position()
+	Fx.flash(root, muzzle, 4.0, 0.4)
+	var marks := 0
+	for i in ends.size():
+		if kind == "rifle":
+			Fx.tracer(root, muzzle, ends[i], Color(1.0, 0.9, 0.7, 0.6))
+			var me := local_player()
+			Rifle.whiz_past(self, eye_position(), ends[i], struck[i] == 2 and me != null and ends[i].distance_to(me.chest_position()) < 1.2)
+		if marks >= 8:
+			continue
+		if struck[i] == 2:
+			Fx.blood(root, ends[i], (ends[i] - eye_position()).normalized())
+			marks += 1
+		elif struck[i] == 1:
+			Fx.impact(root, ends[i], normals[i])
+			marks += 1
+

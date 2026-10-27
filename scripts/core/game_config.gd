@@ -165,6 +165,7 @@ static var white_bots := 0
 static var bunker_start := -1  # -1: nobody (fight for it), else the team that starts with it
 static var player_loadout := "shotgun"
 static var score_limit := 50
+static var player_name := "Player"  # shown to others online
 
 
 ## Vertical FOV for Godot's camera from a "Halo style" 4:3 horizontal FOV.

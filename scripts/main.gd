@@ -1,13 +1,20 @@
 extends Node
-## Entry point: registers input, shows the lobby, and runs matches.
+## Entry point: registers input, shows the lobby, and runs matches, offline or
+## online (the Net node, the same on every machine, carries the connection).
 ## Pass `-- --autostart` on the command line to skip the lobby.
 
 var _menu: MainMenu
 var _game: Game
+var _net: Net
 
 
 func _ready() -> void:
 	InputSetup.register()
+	_net = Net.new()
+	_net.name = "Net"
+	add_child(_net)
+	_net.match_started.connect(_start_game)
+	_net.match_left.connect(_on_match_left)
 	if "--autostart" in OS.get_cmdline_user_args():
 		_start_game()
 	else:
@@ -21,9 +28,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-func _show_menu() -> void:
+func _show_menu(message := "") -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_menu = MainMenu.new()
+	_menu.net = _net
+	_menu.message = message
 	_menu.start_requested.connect(_start_game)
 	add_child(_menu)
 
@@ -32,6 +41,8 @@ func _start_game() -> void:
 	if _menu:
 		_menu.queue_free()
 		_menu = null
+	if _game:
+		_end_game()
 	_game = Game.new()
 	_game.name = "Game"
 	add_child(_game)
@@ -45,13 +56,28 @@ func _end_game() -> void:
 	if _game:
 		_game.queue_free()
 		_game = null
+	_net.game = null
 
 
+## Back to the menu: the lobby if still online (after a match ends), or the
+## main menu if the player chose to leave.
 func _on_exit() -> void:
+	var left := _game != null and _game.quit_by_player
 	_end_game()
+	if left:
+		_net.leave()
 	_show_menu()
 
 
 func _on_restart() -> void:
 	_end_game()
 	_start_game()
+
+
+func _on_match_left(reason: String) -> void:
+	_end_game()
+	if _menu == null:
+		_show_menu(reason)
+	else:
+		_menu.message = reason
+		_menu.refresh()
