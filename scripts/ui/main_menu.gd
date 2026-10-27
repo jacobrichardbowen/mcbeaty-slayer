@@ -201,7 +201,7 @@ func refresh() -> void:
 	_online_row.visible = mode == Net.Mode.OFFLINE
 	_grid.visible = mode != Net.Mode.CLIENT
 	_name.editable = mode == Net.Mode.OFFLINE  # the others already have it
-	_deploy_all.visible = mode == Net.Mode.HOST
+	_deploy_all.visible = net.serving()
 	_code.text = net.code if net.code != "" else ("" if mode == Net.Mode.CLIENT else "...")
 	_code.visible = mode == Net.Mode.HOST
 	_copy.visible = mode == Net.Mode.HOST and net.code != ""

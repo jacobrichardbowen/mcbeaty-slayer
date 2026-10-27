@@ -19,7 +19,7 @@ mount. The map and the guns are still crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Download the latest build (`TowerOfPower_v007.exe`) and double-click
+You don't need Godot to play. Download the latest build (`TowerOfPower_v008.exe`) and double-click
 it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
@@ -34,7 +34,7 @@ normal double-click.
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-the Windows build into `build/` as `TowerOfPower_v007.exe`. The number comes
+the Windows build into `build/` as `TowerOfPower_v008.exe`. The number comes
 from `config/version` in `project.godot`; bump it for each new build. The Mac
 and Linux presets are still there: `tools/build.sh Windows macOS Linux` builds
 all three.
@@ -75,34 +75,46 @@ runs it, and `godot --path . -- --autostart` skips the lobby.
 ## Playing online
 
 Up to four people can play together, each on their own PC, with nothing but
-the exe. There are no servers or accounts: one player hosts, and the others
-connect straight to the host's PC with a short code.
+the exe. There are no accounts and nothing to set up on your router: one
+player hosts, and the others connect straight to the host's PC with a short
+code.
 
-**To host:** type your name and click **Host online game**. After a few
-seconds the lobby shows a code like `6B01R-GEQZN`. Click **Copy code** and
-send it to your friends. Pick sides with **Play for the Whites / Reds**, set
-the bots and the score limit, and click **Deploy everyone** once everyone is
-in.
+**To host:** type your name and click **Host online game**. A second later
+the lobby shows a code like `6B01R-GEQZN`. Click **Copy code** and send it to
+your friends. Pick sides with **Play for the Whites / Reds**, set the bots
+and the score limit, and click **Deploy everyone** once everyone is in.
 
 **To join:** type your name, set your weapon and mouse settings, paste the
-host's code into **Friend's code**, and click **Join**. On the same home
-network, the host's local address (the lobby shows it, e.g. `192.168.1.20`)
-works in place of the code.
+host's code into **Friend's code**, and click **Join**. Joining takes about
+five seconds. On the same home network, the host's local address (the lobby
+shows it, e.g. `192.168.1.20`) works in place of the code.
 
-The code is the host's internet address and port, written short.
+How friends get through the host's router, without changing anything on it:
 
-**If friends can't connect**, the host's router is usually the cause:
+1. Each game asks a public STUN server (Google's or Cloudflare's) what
+   address it shows up as on the internet. The host's address and port,
+   written short, are the code.
+2. A joining game leaves its own address for the host on
+   [ntfy.sh](https://ntfy.sh), a free public message board, under a topic
+   named after the code.
+3. The host's game reads it and sends a few packets toward that address.
+   That tells the host's router the friend is expected, so it lets their
+   connection in. This is called hole punching; video calls and many games
+   connect the same way.
 
-- The game asks the host's router to open UDP port **24565** (UPnP), which
-  most home routers allow. If the lobby says it couldn't, forward UDP port
-  24565 to the host's PC in the router's settings, or have someone else host.
-- The first time you host, Windows Firewall asks whether Tower of Power may
-  use the network. Click **Allow**.
-- Some internet providers (often mobile, satellite and some fibre) share one
-  internet address between many customers, and some homes have a second
-  router behind the provider's. Nobody outside your home can reach a host on
-  such a connection. The lobby says so when it happens; someone else should
-  host.
+Earlier builds asked the host's router to open a port by itself (UPnP). Some
+routers lock up when asked, so the game no longer does that.
+
+**If friends can't connect:**
+
+- The first time you play online, Windows Firewall may ask whether Tower of
+  Power can use the network. Click **Allow**.
+- A few routers, and some mobile and satellite connections, won't let hole
+  punching through. The joining player then gets "Couldn't reach the host"
+  after about 30 seconds. Try someone else as host, or have the host forward
+  UDP port **24565** to their PC in their router's settings.
+- If the lobby says it couldn't reach the internet, the host's PC is offline,
+  or its network blocks the address check.
 
 How an online match works:
 
@@ -343,8 +355,10 @@ godot --headless --path . -s tests/net_test.gd -- client
 # away (the file has the commands)
 tests/net_lobby_test.gd
 
-# Online, four copies played by the bot AI fight for a minute; the script
-# checks that all four agree on every soldier and on the score
+# Online, four copies played by the bot AI fight for a minute; friends join
+# with the host's code through tests/fake_internet.py (a stand-in STUN
+# server, message board and strict home router, with lag and loss). The
+# script checks that all four agree on every soldier and on the score
 GODOT=godot tools/net_soak.sh
 
 # Screenshots (needs a display; works under xvfb-run)
@@ -356,7 +370,8 @@ godot --path . --resolution 1280x720 --fixed-fps 60 -s tests/screenshots.gd -- /
 ```
 scripts/
   main.gd                   menu, lobby and match flow, offline or online
-  net/net.gd                online play: hosting, join codes, the router port, the lobby, messages
+  net/net.gd                online play: hosting, join codes, hole punching, the lobby, messages
+  net/stun.gd               asks a STUN server for this PC's address on the internet
   net/net_codec.gd          soldier states packed into a few bytes
   core/game.gd              one match: world, spawning, scoring, medals
   core/bunker_control.gd    who holds the gun bunker (and so where each team spawns)

@@ -28,6 +28,9 @@ func _initialize() -> void:
 	else:
 		GameConfig.player_loadout = "shotgun"
 		_expect(Net.decode(Net.encode("203.0.113.7", 24565)) == ["203.0.113.7", 24565], "a join code spells the address and port")
+		# RFC 5769's sample STUN answer (section 2.2): 192.0.2.1, port 32853.
+		var stun := "0101003c2112a442b7e7a701bc34d686fa87dfae8022000b7465737420766563746f7220002000080001a147e112a643000800142b91f599fd9e90c38c7489f92af9ba53f06be7d780280004c07d4c96"
+		_expect(Stun.parse(stun.hex_decode(), "b7e7a701bc34d686fa87dfae".hex_decode()) == ["192.0.2.1", 32853], "a STUN answer reads right")
 		net.join.call_deferred("Client", "127.0.0.1")
 
 

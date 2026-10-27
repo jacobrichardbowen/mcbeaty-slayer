@@ -2,10 +2,13 @@ class_name Net
 extends Node
 ## Online play for up to four people, free and with nothing to install.
 ##
-## The host's game asks their router to open a port (UPnP) and shows a short
-## join code: their internet address and port, spelled in ten characters.
-## Friends type the code (or, on the same network, the host's local address)
-## and connect straight to the host over ENet.
+## The host's game asks a public STUN server for its address on the internet
+## and shows it as a short join code. A joining player's game does the same,
+## then leaves its own address for the host on a free public message board
+## (ntfy.sh). The host's game sends a few packets toward that address, so the
+## host's router knows the player is expected and lets their connection in
+## (hole punching). Nothing on either router is changed. On the same network,
+## friends can join with the host's local address instead.
 ##
 ## The host runs the match: bots, health, deaths, respawns, scores, the
 ## bunker and who is on the Maxim. Each player moves their own soldier and
@@ -27,7 +30,16 @@ const SNAPSHOT_EVERY := 3  # physics ticks between host snapshots (20 Hz)
 const STATE_EVERY := 2  # physics ticks between a player's own updates (30 Hz)
 const INTERP_DELAY := 0.1  # how far behind other soldiers are drawn
 const CODE_ALPHABET := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base 32
+const MEET_POLL := 4.0  # seconds between the host's looks at the message board (ntfy.sh allows ~1 per 5 s after a burst of 60)
+const MEET_WAIT := 3.5  # a joining player's wait for the host to read their note
+const KNOCKS := 20  # packets the host sends toward each player on their way in...
+const KNOCK_GAP := 0.5  # ...this many seconds apart
+const KEEP_OPEN := 20.0  # seconds between packets that stop the host's router forgetting its port
 
+## Public STUN servers, [host, port], asked in turn.
+static var stun_servers: Array = [["stun.l.google.com", 19302], ["stun.cloudflare.com", 3478], ["stun1.l.google.com", 19302]]
+## The message board ("" to go without). Tests point both at stand-ins.
+static var meeting_url := "https://ntfy.sh/"
 static var instance: Net
 
 var mode := Mode.OFFLINE
@@ -44,9 +56,17 @@ var settings := {}
 var game: Game
 
 var _tick := 0
-var _upnp: UPNP
-var _router_thread: Thread
-var _mapped := false
+var _thread: Thread
+var _abort := false
+var _attempt := 0  # bumped on leaving, so late answers for an old attempt are ignored
+var _target := []  # client: the host's [address, port]
+var _local_port := 0  # client: the port its address check used, kept for connecting
+var _keep_open_to := []  # host: the STUN server [ip, port] its keep-open packets go to
+var _keep_open_in := 0.0
+var _poll: HTTPRequest
+var _poll_in := 0.0
+var _meet_since := ""
+var _knocks := {}  # host: "ip:port" -> [knocks left, seconds to the next]
 var _offset := {}  # sender peer -> local time minus its clock, smallest seen
 var _offset_age := {}
 var _refusal := ""  # why the host turned us away, if it did
@@ -84,51 +104,61 @@ static func clock() -> float:
 
 # --- Hosting and joining ---------------------------------------------------------------
 
-func host(player_name: String, open_router := true) -> Error:
+## Hosts a game. Tests on one machine pass `find_address` false to skip the
+## internet address check and the message board.
+func host(player_name: String, find_address := true) -> void:
 	leave()
 	my_name = player_name
-	var peer := ENetMultiplayerPeer.new()
-	# One spare connection, so a fifth player can be told the game is full.
-	var err := peer.create_server(PORT, MAX_PLAYERS)
-	if err != OK:
-		_status("Couldn't open port %d on this computer (is another copy hosting?)" % PORT)
-		return err
-	multiplayer.multiplayer_peer = peer
 	mode = Mode.HOST
 	players = {1: {"name": my_name, "team": GameConfig.TEAM_WHITE}}
-	_connect_signals()
 	lan_address = _lan_address()
 	code = ""
-	_status("Opening a port on your router...")
-	if open_router:
-		_router_thread = Thread.new()
-		_router_thread.start(_open_router)
+	if find_address:
+		# The check borrows the game's port, so it learns the port friends will reach.
+		_status("Finding your internet address...")
+		_start_check(PORT)
+	elif _open_server() != OK:
+		return
 	lobby_changed.emit()
-	return OK
 
 
-func join(player_name: String, text: String) -> Error:
+## Host: whether players can connect yet.
+func serving() -> bool:
+	return mode == Mode.HOST and multiplayer.multiplayer_peer is ENetMultiplayerPeer
+
+
+func join(player_name: String, text: String) -> void:
 	leave()
 	my_name = player_name
-	var addr := decode(text)
-	if addr.is_empty():
+	_target = decode(text)
+	if _target.is_empty():
 		_status("That code doesn't look right. It's 10 letters and numbers, or an address like 192.168.1.20.")
-		return ERR_INVALID_PARAMETER
-	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(addr[0], addr[1])
-	if err != OK:
-		_status("Couldn't start connecting (%s)." % error_string(err))
-		return err
-	multiplayer.multiplayer_peer = peer
+		return
 	mode = Mode.CLIENT
 	players = {}
-	_connect_signals()
-	_status("Connecting to %s..." % addr[0])
-	return OK
+	_local_port = 0
+	_status("Connecting to the host...")
+	if meeting_url != "" and not (text.count(".") == 3 and _private(_target[0])):
+		# Over the internet: find our address and leave it for the host first.
+		_start_check(0)
+	else:
+		_connect_client()
+	lobby_changed.emit()
 
 
-## Closes the connection (and the router port, if we opened one).
+## Closes the connection and stops anything still on its way.
 func leave() -> void:
+	_attempt += 1
+	_abort = true
+	_end_thread()
+	_abort = false
+	if _poll:
+		_poll.cancel_request()
+		_poll.queue_free()
+		_poll = null
+	_knocks = {}
+	_keep_open_to = []
+	_meet_since = ""
 	if mode == Mode.OFFLINE:
 		return
 	mode = Mode.OFFLINE
@@ -140,16 +170,32 @@ func leave() -> void:
 			[multiplayer.server_disconnected, _on_server_disconnected]]:
 		if (sig[0] as Signal).is_connected(sig[1]):
 			(sig[0] as Signal).disconnect(sig[1])
-	if _router_thread and _router_thread.is_started():
-		_router_thread.wait_to_finish()
-	_router_thread = null
-	if _mapped and _upnp:
-		_upnp.delete_port_mapping(PORT, "UDP")
-	_mapped = false
 	players = {}
 	roster = []
 	_offset = {}
 	_refusal = ""
+
+
+func _open_server() -> Error:
+	var peer := ENetMultiplayerPeer.new()
+	# One spare connection, so a fifth player can be told the game is full.
+	var err := peer.create_server(PORT, MAX_PLAYERS)
+	if err != OK:
+		_fail("Couldn't use port %d on this computer. Is another copy of the game hosting?" % PORT)
+		return err
+	multiplayer.multiplayer_peer = peer
+	_connect_signals()
+	return OK
+
+
+func _connect_client() -> void:
+	var peer := ENetMultiplayerPeer.new()
+	var err := peer.create_client(_target[0], _target[1], 0, 0, 0, _local_port)
+	if err != OK:
+		_fail("Couldn't start connecting (%s)." % error_string(err))
+		return
+	multiplayer.multiplayer_peer = peer
+	_connect_signals()
 
 
 func _connect_signals() -> void:
@@ -164,57 +210,167 @@ func _status(text: String) -> void:
 	status_changed.emit(text)
 
 
-## Runs on a thread: router discovery can take a couple of seconds.
-func _open_router() -> void:
-	_upnp = UPNP.new()
-	var ok := false
-	var external := ""
-	if _upnp.discover(2000, 2, "InternetGatewayDevice") == UPNP.UPNP_RESULT_SUCCESS \
-			and _upnp.get_gateway() and _upnp.get_gateway().is_valid_gateway():
-		ok = _upnp.add_port_mapping(PORT, PORT, "Tower of Power", "UDP", 0) == UPNP.UPNP_RESULT_SUCCESS
-		external = _upnp.query_external_address()
-	_router_done.call_deferred(ok, external)
+## Gives up on the connection, saying why.
+func _fail(reason: String) -> void:
+	leave()
+	_status(reason)
+	match_left.emit(reason)
 
 
-func _router_done(ok: bool, external: String) -> void:
-	if mode != Mode.HOST:
-		return
-	_mapped = ok
-	if _router_thread and _router_thread.is_started():
-		_router_thread.wait_to_finish()
-	_router_thread = null
-	if external != "":
-		_set_public(external, ok)
-	else:
-		# No router answer: ask a public echo service for our address, so a
-		# player who forwards the port by hand still gets a code.
-		var http := HTTPRequest.new()
-		add_child(http)
-		http.timeout = 5.0
-		http.request_completed.connect(func(_r: int, status: int, _h: PackedStringArray, body: PackedByteArray) -> void:
-			http.queue_free()
-			_set_public(body.get_string_from_utf8().strip_edges() if status == 200 else "", false))
-		if http.request("https://api.ipify.org") != OK:
-			http.queue_free()
-			_set_public("", false)
+# --- Finding our address and meeting up ------------------------------------------------
+
+## Asks the STUN servers for our internet address from `local_port`, on a
+## thread since it can take a second or two.
+func _start_check(local_port: int) -> void:
+	var attempt := _attempt
+	_thread = Thread.new()
+	_thread.start(func() -> void:
+		var found := Stun.discover(local_port, stun_servers, func() -> bool: return _abort)
+		_checked.call_deferred(found, attempt))
 
 
-func _set_public(address: String, router_opened: bool) -> void:
-	public_address = address
-	var parts := address.split(".")
-	if parts.size() != 4:
-		code = ""
-		_status("Couldn't find your internet address. Friends on your network can join with %s." % lan_address)
-	elif _private(address):
-		code = ""
-		_status("Friends outside your network can't reach this PC: it's behind a second router, or your internet provider shares one address between customers. Someone else should host. Friends on your network can join with %s." % lan_address)
-	else:
-		code = encode(address, PORT)
-		if router_opened:
-			_status("Ready. Friends join with the code above (or %s on your network)." % lan_address)
+func _end_thread() -> void:
+	if _thread and _thread.is_started():
+		_thread.wait_to_finish()
+	_thread = null
+
+
+func _checked(found: Dictionary, attempt: int) -> void:
+	if attempt != _attempt:
+		return  # leave() already waited for that thread
+	_end_thread()
+	if mode == Mode.HOST:
+		if found.has("error"):
+			_fail("Couldn't use port %d on this computer. Is another copy of the game hosting?" % PORT)
+		elif _open_server() == OK:
+			if found.has("address"):
+				_keep_open_to = found["server"]
+				_set_public(found["address"], found["port"], true)
+			else:
+				_look_up_address()
+	elif mode == Mode.CLIENT:
+		_local_port = found.get("local_port", 0)
+		if found.has("address"):
+			_leave_note("join %s:%d" % [found["address"], found["port"]])
 		else:
-			_status("Your router didn't open the port by itself. Turn on UPnP in its settings, or forward UDP port %d to %s, and the code above will work. Friends on your network can join with %s." % [PORT, lan_address, lan_address])
+			_connect_client()
+
+
+## Host: no STUN server answered (UDP blocked?), so ask a web service for our
+## address instead and hope the router keeps the game's port number.
+func _look_up_address() -> void:
+	var attempt := _attempt
+	var http := HTTPRequest.new()
+	http.timeout = 8.0
+	add_child(http)
+	http.request_completed.connect(func(_r: int, status: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+		http.queue_free()
+		if attempt == _attempt:
+			_set_public(body.get_string_from_utf8().strip_edges() if status == 200 else "", PORT, false))
+	if http.request("https://api.ipify.org") != OK:
+		http.queue_free()
+		_set_public("", PORT, false)
+
+
+func _set_public(address: String, port: int, checked: bool) -> void:
+	public_address = address
+	if address.count(".") != 3 or not address.is_valid_ip_address():
+		code = ""
+		_status("Couldn't reach the internet to make a code. Is this PC online? Friends on your own network can join with %s." % lan_address)
+	else:
+		code = encode(address, port)
+		if checked:
+			_status("Ready. Friends join with the code above (or %s on your own network)." % lan_address)
+		else:
+			_status("Ready, but the address check got no answer, so friends outside your network may not get in. If they can't, forward UDP port %d to %s in your router's settings, or let someone else host. On your own network they can join with %s." % [PORT, lan_address, lan_address])
+	_poll_in = 0.0
 	lobby_changed.emit()
+
+
+## The message board topic for a host's address: named after its code.
+static func _topic(address: Array) -> String:
+	return "tower-of-power-" + encode(address[0], address[1]).replace("-", "")
+
+
+## Client: leaves our address on the message board for the host, gives the
+## host a moment to read it and knock, then connects.
+func _leave_note(note: String) -> void:
+	var attempt := _attempt
+	var http := HTTPRequest.new()
+	http.timeout = 8.0
+	add_child(http)
+	var then := func(left: bool) -> void:
+		if attempt != _attempt:
+			return
+		if not left:
+			_connect_client()
+			return
+		get_tree().create_timer(MEET_WAIT).timeout.connect(func() -> void:
+			if attempt == _attempt:
+				_connect_client())
+	http.request_completed.connect(func(result: int, status: int, _h: PackedStringArray, _b: PackedByteArray) -> void:
+		http.queue_free()
+		then.call(result == HTTPRequest.RESULT_SUCCESS and status == 200))
+	if http.request(meeting_url + _topic(_target), [], HTTPClient.METHOD_POST, note) != OK:
+		http.queue_free()
+		then.call(false)
+
+
+## Host: keeps our router's port in use, knocks toward players on their way
+## in, and looks for new notes on the message board.
+func _process(delta: float) -> void:
+	if not serving() or code == "":
+		return
+	var enet := (multiplayer.multiplayer_peer as ENetMultiplayerPeer).host
+	if not _keep_open_to.is_empty():
+		_keep_open_in -= delta
+		if _keep_open_in <= 0.0:
+			_keep_open_in = KEEP_OPEN
+			enet.socket_send(_keep_open_to[0], _keep_open_to[1], Stun.request(Crypto.new().generate_random_bytes(12)))
+	for to: String in _knocks.keys():
+		var knock: Array = _knocks[to]
+		knock[1] -= delta
+		if knock[1] <= 0.0:
+			# Sending toward them is what tells our router to let their packets in.
+			var at := to.split(":")
+			enet.socket_send(at[0], int(at[1]), PackedByteArray([0]))
+			knock[0] -= 1
+			knock[1] = KNOCK_GAP
+			if knock[0] <= 0:
+				_knocks.erase(to)
+	if meeting_url != "" and game == null and _poll == null and players.size() < MAX_PLAYERS:
+		_poll_in -= delta
+		if _poll_in <= 0.0:
+			_read_notes()
+
+
+func _read_notes() -> void:
+	_poll = HTTPRequest.new()
+	_poll.timeout = 10.0
+	add_child(_poll)
+	_poll.request_completed.connect(_on_notes.bind(_attempt))
+	var since := _meet_since if _meet_since != "" else "1m"
+	if _poll.request("%s%s/json?poll=1&since=%s" % [meeting_url, _topic(decode(code)), since]) != OK:
+		_on_notes(HTTPRequest.RESULT_CANT_CONNECT, 0, PackedStringArray(), PackedByteArray(), _attempt)
+
+
+func _on_notes(result: int, status: int, _h: PackedStringArray, body: PackedByteArray, attempt: int) -> void:
+	if attempt != _attempt or _poll == null:
+		return
+	_poll.queue_free()
+	_poll = null
+	_poll_in = 20.0 if status == 429 else MEET_POLL  # 429: the board asks us to slow down
+	if result != HTTPRequest.RESULT_SUCCESS or status != 200:
+		return
+	for line in body.get_string_from_utf8().split("\n", false):
+		var note: Variant = JSON.parse_string(line)
+		if not note is Dictionary or note.get("event") != "message":
+			continue
+		_meet_since = str(note.get("id", _meet_since))
+		var words := str(note.get("message", "")).split(" ")
+		var at := decode(words[1]) if words.size() == 2 and words[0] == "join" and words[1].count(".") == 3 else []
+		if at.size() == 2 and at[1] > 0 and at[1] < 65536 and _knocks.size() < 16:
+			_knocks["%s:%d" % at] = [KNOCKS, 0.0]
 
 
 static func _private(address: String) -> bool:
@@ -299,9 +455,7 @@ func _on_connected() -> void:
 
 
 func _on_connection_failed() -> void:
-	leave()
-	_status("Couldn't reach the host. Check the code; the host may need to open their router's port.")
-	match_left.emit("Couldn't reach the host.")
+	_fail("Couldn't reach the host. Check the code with them. If it's right, a router is turning the connection away: the host can forward UDP port %d to their PC in their router's settings, or someone else can host." % PORT)
 
 
 func _on_server_disconnected() -> void:
@@ -360,7 +514,7 @@ func _team(team: int, peer: int) -> void:
 
 ## Host: starts the match for everyone, humans first, bots after.
 func start_match(white_bots: int, red_bots: int) -> void:
-	if mode != Mode.HOST:
+	if not serving():
 		return
 	settings = {"bunker_start": GameConfig.bunker_start, "score_limit": GameConfig.score_limit}
 	roster = []

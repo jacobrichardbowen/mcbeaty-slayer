@@ -2,21 +2,38 @@
 # Four copies of the game (a host and three friends, all played by the bot
 # AI) fight online over this machine for a minute, then each says where it
 # sees every soldier at the same moment. This compares the four views.
-#   GODOT=/path/to/godot tools/net_soak.sh [seconds] [address friends join]
+#   GODOT=/path/to/godot tools/net_soak.sh [seconds] [direct]
+# By default friends join with the host's code through tests/fake_internet.py
+# (a STUN server, the message board, and a strict home router in front of
+# the host, with lag and loss); "direct" connects them straight to it.
 set -e
 cd "$(dirname "$0")/.."
 GODOT=${GODOT:-godot}
 LOGS=$(mktemp -d)
-DEADLINE=$(python3 -c "import time; print(time.time() + ${1:-70})")
-"$GODOT" --headless --path . -s tests/net_soak_test.gd -- host Host "$DEADLINE" > "$LOGS/Host.log" 2>&1 &
+SECONDS_LEFT=${1:-70}
+DEADLINE=$(python3 -c "import time; print(time.time() + $SECONDS_LEFT)")
+VIA=direct
+if [ "${2:-}" != direct ]; then
+	python3 tests/fake_internet.py --seconds $((SECONDS_LEFT + 4)) > "$LOGS/internet.txt" 2>&1 &
+	INTERNET=$!
+	VIA=fake:34780:34781:34790
+	sleep 0.5
+fi
+"$GODOT" --headless --path . -s tests/net_soak_test.gd -- host Host "$DEADLINE" $VIA > "$LOGS/Host.log" 2>&1 &
+GAMES=$!
 sleep 1
 for who in Anna Boris Clara; do
-	"$GODOT" --headless --path . -s tests/net_soak_test.gd -- join "$who" "$DEADLINE" "${2:-127.0.0.1}" > "$LOGS/$who.log" 2>&1 &
+	"$GODOT" --headless --path . -s tests/net_soak_test.gd -- join "$who" "$DEADLINE" $VIA > "$LOGS/$who.log" 2>&1 &
+	GAMES="$GAMES $!"
 	sleep 0.5
 done
-wait
+wait $GAMES
+if [ -n "${INTERNET:-}" ]; then
+	wait $INTERNET
+	cat "$LOGS/internet.txt"
+fi
 grep -h -A4 "SCRIPT ERROR" "$LOGS"/*.log && { echo "NET SOAK FAILED: script errors (logs in $LOGS)"; exit 1; }
-python3 - "$LOGS" <<'PY'
+python3 - "$LOGS" "$VIA" <<'PY'
 import glob, json, math, sys
 views = {}
 for f in glob.glob(sys.argv[1] + "/*.log"):
@@ -50,6 +67,8 @@ for path, d in gaps.items():
         print("%-16s median %.2f m, worst %.2f m (%d views)" % (path, d[len(d) // 2], d[-1], len(d)))
         if d[len(d) // 2] > 2.0:
             problems.append("%s views are %.1f m apart" % (path, d[len(d) // 2]))
+if views["Host"]["code"] == "" and sys.argv[2] != "direct":
+    problems.append("the host got no join code")
 scores = {w: tuple(v["scores"]) for w, v in views.items()}
 print("scores", scores["Host"], "snapshot %d bytes" % views["Host"]["snapshot_bytes"])
 if len(set(scores.values())) > 1:
