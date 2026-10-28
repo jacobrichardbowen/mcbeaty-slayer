@@ -89,8 +89,9 @@ func _ready() -> void:
 	_row(_grid, "Red bots", _spin(0, most, GameConfig.red_bots, func(v: float) -> void: GameConfig.red_bots = int(v)))
 	_row(_grid, "White bots", _spin(0, most - 1, GameConfig.white_bots, func(v: float) -> void: GameConfig.white_bots = int(v)))
 	_row(_grid, "Score limit", _spin(5, 250, GameConfig.score_limit, func(v: float) -> void: GameConfig.score_limit = int(v), 5))
-	_row(_grid, "Mouse sensitivity", _slider(0.02, 0.4, GameConfig.mouse_sensitivity, func(v: float) -> void: GameConfig.mouse_sensitivity = v))
-	_row(_grid, "Field of view (Halo 2 = 70)", _slider(60, 100, GameConfig.fov, func(v: float) -> void: GameConfig.fov = v, 1.0))
+	_row(_grid, "Mouse sensitivity", sensitivity_slider())
+	_row(_grid, "Field of view", value_slider(GameConfig.FOV_MIN, GameConfig.FOV_MAX, 1.0, GameConfig.fov, "%d°",
+		func(v: float) -> void: GameConfig.fov = v))
 	var inv := CheckBox.new()
 	inv.button_pressed = GameConfig.invert_y
 	inv.toggled.connect(func(on: bool) -> void: GameConfig.invert_y = on)
@@ -250,12 +251,31 @@ func _spin(lo: float, hi: float, value: float, on_change: Callable, step := 1.0)
 	return sb
 
 
-func _slider(lo: float, hi: float, value: float, on_change: Callable, step := 0.01) -> HSlider:
+## A slider with its value written beside it (`format`, e.g. "%d°").
+static func value_slider(lo: float, hi: float, step: float, value: float, format: String, on_change: Callable) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
 	var s := HSlider.new()
 	s.min_value = lo
 	s.max_value = hi
 	s.step = step
 	s.value = value
 	s.custom_minimum_size = Vector2(220, 24)
-	s.value_changed.connect(on_change)
-	return s
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(s)
+	var shown := Label.new()
+	shown.custom_minimum_size = Vector2(52, 0)
+	shown.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	shown.text = format % value
+	row.add_child(shown)
+	s.value_changed.connect(func(v: float) -> void:
+		shown.text = format % v
+		on_change.call(v))
+	return row
+
+
+## Degrees the view turns per pixel of mouse movement.
+static func sensitivity_slider() -> Control:
+	return value_slider(GameConfig.SENSITIVITY_MIN, GameConfig.SENSITIVITY_MAX, 0.002, GameConfig.mouse_sensitivity, "%.3f",
+		func(v: float) -> void: GameConfig.mouse_sensitivity = v)

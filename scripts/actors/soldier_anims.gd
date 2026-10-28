@@ -7,7 +7,13 @@ extends RefCounted
 ## The airborne pose is one frame of the jump.
 
 const DIR := "res://assets/characters/soldier/"
-const CHARACTER := DIR + "Soldier_White_A_v005_JBO.fbx"
+const CHARACTER := DIR + "Soldier_White_A_v008_JBO.fbx"
+## The clips were downloaded from Mixamo for an earlier version of the
+## character (v005), whose hips stood this high in its own units. A new
+## version only needs its own Mixamo rig: a clip is joint rotations, which
+## carry over as they are, plus the hips' movement, scaled here to the new
+## legs so the feet stay on the ground.
+const CLIP_HIPS_HEIGHT := 1.2997
 const FPS := 30.0
 const CYCLE := 0.7  # seconds per gait cycle (two steps)
 const HIPS := "Skeleton3D:mixamorig_Hips"
@@ -28,6 +34,7 @@ const AIR_DROP := 0.08  # tuck the hips a little in the air
 static var stride := {}
 static var _library: AnimationLibrary
 static var _rest := {}  # bone -> rest transform, from the character
+static var _hip_scale := 1.0  # the character's hips height over the clips'
 
 
 static func library() -> AnimationLibrary:
@@ -53,7 +60,13 @@ static func _read_rest() -> void:
 	var sk := scene.get_node("Skeleton3D") as Skeleton3D
 	for b in sk.get_bone_count():
 		_rest[sk.get_bone_name(b)] = sk.get_bone_rest(b)
+	_hip_scale = (_rest["mixamorig_Hips"] as Transform3D).origin.y / CLIP_HIPS_HEIGHT
 	scene.free()
+
+
+## Where a clip puts the hips at `t`, fitted to the character's legs.
+static func _hips_at(src: Animation, track: int, t: float) -> Vector3:
+	return src.position_track_interpolate(track, t) * _hip_scale
 
 
 ## Resamples a clip into an in-place loop. Gait loops are shifted to start as
@@ -61,8 +74,8 @@ static func _read_rest() -> void:
 static func _make_loop(src: Animation, gait: bool, name: String) -> Animation:
 	var length := src.length
 	var hips := src.find_track(HIPS, Animation.TYPE_POSITION_3D)
-	var p0 := src.position_track_interpolate(hips, 0.0)
-	var drift := src.position_track_interpolate(hips, length) - p0
+	var p0 := _hips_at(src, hips, 0.0)
+	var drift := _hips_at(src, hips, length) - p0
 	drift.y = 0.0
 	stride[name] = drift.length()
 	var start := _left_foot_down(src) if gait else 0.0
@@ -73,7 +86,7 @@ static func _make_loop(src: Animation, gait: bool, name: String) -> Animation:
 	var centre := Vector3.ZERO
 	for i in n:
 		var t := fmod(start + length * i / n, length)
-		var p := src.position_track_interpolate(hips, t) - drift * (t / length)
+		var p := _hips_at(src, hips, t) - drift * (t / length)
 		hips_keys.append(p)
 		centre += Vector3(p.x, 0, p.z) / n
 	var anim := Animation.new()
@@ -134,7 +147,7 @@ static func _left_foot_down(src: Animation) -> float:
 			var pt := src.find_track("Skeleton3D:" + bone, Animation.TYPE_POSITION_3D)
 			var rt := src.find_track("Skeleton3D:" + bone, Animation.TYPE_ROTATION_3D)
 			if pt >= 0:
-				pos = src.position_track_interpolate(pt, t)
+				pos = _hips_at(src, pt, t) if bone == "mixamorig_Hips" else src.position_track_interpolate(pt, t)
 			if rt >= 0:
 				rot = src.rotation_track_interpolate(rt, t)
 			xf = xf * Transform3D(Basis(rot), pos)

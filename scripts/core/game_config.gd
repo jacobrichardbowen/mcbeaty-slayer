@@ -157,10 +157,14 @@ const BOT_TURRET_REACTION := 0.6
 const BOT_TURRET_AIM_ERROR := 2.4
 
 # --- Player-adjustable settings (main menu / pause menu) ------------------------
-static var mouse_sensitivity := 0.11  # degrees per pixel
+const SENSITIVITY_MIN := 0.02
+const SENSITIVITY_MAX := 0.28
+const FOV_MIN := 60.0
+const FOV_MAX := 110.0
+static var mouse_sensitivity := 0.088  # degrees per pixel
 static var pad_look_speed := 150.0  # degrees per second at full stick
 static var invert_y := false
-static var fov := 70.0  # Halo 2's horizontal FOV at 4:3
+static var fov := 78.0  # degrees across a 16:9 screen (Halo 2's 70 was across a 4:3 TV)
 static var red_bots := 4
 static var white_bots := 0
 static var bunker_start := -1  # -1: nobody (fight for it), else the team that starts with it
@@ -169,6 +173,7 @@ static var score_limit := 50
 static var player_name := "Player"  # shown to others online
 
 
-## Vertical FOV for Godot's camera from a "Halo style" 4:3 horizontal FOV.
+## Godot's camera angle (vertical) for `fov` across a 16:9 screen. Wider
+## screens see more at the sides and narrower ones less, at the same height.
 static func vertical_fov() -> float:
-	return rad_to_deg(2.0 * atan(tan(deg_to_rad(fov) * 0.5) * 0.75))
+	return rad_to_deg(2.0 * atan(tan(deg_to_rad(fov) * 0.5) * 9.0 / 16.0))

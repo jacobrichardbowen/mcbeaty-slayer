@@ -30,13 +30,7 @@ func _ready() -> void:
 	var sens_label := Label.new()
 	sens_label.text = "Mouse sensitivity"
 	box.add_child(sens_label)
-	var sens := HSlider.new()
-	sens.min_value = 0.02
-	sens.max_value = 0.4
-	sens.step = 0.01
-	sens.value = GameConfig.mouse_sensitivity
-	sens.value_changed.connect(func(v: float) -> void: GameConfig.mouse_sensitivity = v)
-	box.add_child(sens)
+	box.add_child(MainMenu.sensitivity_slider())
 	var inv := CheckBox.new()
 	inv.text = "Invert look"
 	inv.button_pressed = GameConfig.invert_y

@@ -19,7 +19,7 @@ mount. The map and the guns are still crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Download the latest build (`TowerOfPower_v009.exe`) and double-click
+You don't need Godot to play. Download the latest build (`TowerOfPower_v010.exe`) and double-click
 it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
@@ -34,7 +34,7 @@ normal double-click.
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-the Windows build into `build/` as `TowerOfPower_v009.exe`. The number comes
+the Windows build into `build/` as `TowerOfPower_v010.exe`. The number comes
 from `config/version` in `project.godot`; bump it for each new build. The Mac
 and Linux presets are still there: `tools/build.sh Windows macOS Linux` builds
 all three.
@@ -53,8 +53,12 @@ runs it, and `godot --path . -- --autostart` skips the lobby.
   the death screen while you wait to respawn.
 - **Red bots** (1–16) and **White bots** (your side, 0–15): up to 16 a side.
 - **Score limit**: the 2004 variant used 250. The default here is 50.
-- Mouse sensitivity, field of view (Halo 2's is 70° horizontal at 4:3), and
-  invert look.
+- **Mouse sensitivity**: degrees the view turns per pixel of mouse movement
+  (default 0.088; it can also be changed from the pause menu).
+- **Field of view**: degrees across a 16:9 screen (default 78°). Halo 2's 70°
+  was across an old 4:3 TV; keeping its height of view on a widescreen would
+  be 86° across. Wider screens see a little more at the sides.
+- **Invert look**.
 
 ### Controls
 
@@ -278,7 +282,7 @@ The world shapes what you hear, in the spirit of Peak and Big Walk
 
 ## The soldier character
 
-The soldiers are `Soldier_White_A_v005_JBO.fbx`, rigged with Mixamo's
+The soldiers are `Soldier_White_A_v008_JBO.fbx`, rigged with Mixamo's
 skeleton, in [`assets/characters/soldier/`](assets/characters/soldier/). Godot
 imports the FBX files directly. From the Mixamo Shooter Pack the game uses six
 clips, in `anims/` there:
@@ -312,9 +316,14 @@ On death, a copy of the character takes the soldier's last pose. Ten capsules
 (torso, head, upper arms, forearms, thighs, shins) then move its bones. Knees
 and elbows are hinges, so they only bend the natural way.
 
-To update the character, replace the FBX with a new export under the same
-name. It has to keep the Mixamo rig, and the Reds' dye looks for a material
-whose name starts with `White Wool`.
+To update the character, only the character itself is needed, not the
+clips. Rig the new version in Mixamo (or keep the existing rig while editing
+it in a 3D program), put the FBX in `assets/characters/soldier/` and point
+`CHARACTER` in `scripts/actors/soldier_anims.gd` at it. The clips were
+downloaded for v005 and are joint rotations, which carry over to any Mixamo
+rig; the hips' movement is scaled to the new character's legs. On v008 they
+land within a centimetre or two of the clips Mixamo makes for v008 itself.
+The Reds' dye looks for a material whose name starts with `White Wool`.
 
 ## Bots
 
