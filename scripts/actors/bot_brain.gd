@@ -418,8 +418,7 @@ func _safe_ahead(dir: Vector3, reach := 1.2) -> bool:
 	return Vector2(closest.x - probe.x, closest.z - probe.z).length() < 0.35 and absf(closest.y - probe.y) < 1.0
 
 
-## A running hop carries a soldier ~4.6 m, so only jump with solid ground
-## well ahead (checked a little beyond that).
+## A hop carries a soldier ~6 m, so only jump with solid ground well ahead.
 func _can_jump(dir: Vector3) -> bool:
 	if dir == Vector3.ZERO:
 		return _safe_ahead(Basis(Vector3.UP, s.look_yaw).x, 1.5) and _safe_ahead(-Basis(Vector3.UP, s.look_yaw).x, 1.5)
