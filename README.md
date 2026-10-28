@@ -53,8 +53,9 @@ runs it, and `godot --path . -- --autostart` skips the lobby.
   the death screen while you wait to respawn.
 - **Red bots** (1–16) and **White bots** (your side, 0–15): up to 16 a side.
 - **Score limit**: the 2004 variant used 250. The default here is 50.
-- **Mouse sensitivity**: degrees the view turns per pixel of mouse movement
-  (default 0.088; it can also be changed from the pause menu).
+- **Mouse sensitivity**: how far the view turns per step of mouse movement
+  (default 0.088; it can also be changed from the pause menu). The same
+  number turns a little slower on higher-resolution screens.
 - **Field of view**: degrees across a 16:9 screen (default 78°). Halo 2's 70°
   was across an old 4:3 TV; keeping its height of view on a widescreen would
   be 86° across. Wider screens see a little more at the sides.
