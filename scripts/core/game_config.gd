@@ -34,9 +34,10 @@ const CROUCH_HEIGHT := 1.3
 const STAND_EYE := 1.72
 const CROUCH_EYE := 1.12
 const RADIUS := 0.38
-# Partway to Halo 2 (6.86 m/s forward, 6.10 sideways/back, ~2.4 m jump).
-const RUN_SPEED := 6.6  # forward
-const STRAFE_SPEED := 6.2  # sideways and backwards
+# Slower than Halo 2 (6.86 m/s forward, 6.10 sideways/back): these are men,
+# not 7-foot Spartans. Sideways keeps the earlier 6.6 : 6.2 proportion.
+const RUN_SPEED := 5.0  # forward
+const STRAFE_SPEED := 4.7  # sideways and backwards
 const CROUCH_SPEED := 3.0
 const GROUND_ACCEL := 70.0
 const GROUND_DECEL := 55.0

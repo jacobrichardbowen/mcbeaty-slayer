@@ -19,7 +19,7 @@ mount. The map and the guns are still crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Download the latest build (`TowerOfPower_v008.exe`) and double-click
+You don't need Godot to play. Download the latest build (`TowerOfPower_v009.exe`) and double-click
 it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
@@ -34,7 +34,7 @@ normal double-click.
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-the Windows build into `build/` as `TowerOfPower_v008.exe`. The number comes
+the Windows build into `build/` as `TowerOfPower_v009.exe`. The number comes
 from `config/version` in `project.godot`; bump it for each new build. The Mac
 and Linux presets are still there: `tools/build.sh Windows macOS Linux` builds
 all three.
@@ -153,8 +153,9 @@ turret placed in one of the towers.
   22° up to 55° down. Third-person camera while you're on it, as with Halo 2
   vehicles. The gunner stays exposed from the sides and from the stairwell
   that comes out right behind them.
-- **Movement**: partway to Halo 2. You run 6.6 m/s forwards and 6.2 sideways
-  or backwards (Halo 2: 6.9 and 6.1), and jump about 1.8 m (Halo 2: 2.4).
+- **Movement**: slower than Halo 2, since these are men rather than 7-foot
+  Spartans. You run 5 m/s forwards and 4.7 sideways or backwards (Halo 2: 6.9
+  and 6.1), and jump about 1.8 m (Halo 2: 2.4).
 - **Deaths**: bodies go limp and are thrown along the killing shot, hardest by
   a point-blank shotgun blast, much as Havok did in Halo 2. The death camera
   follows the body.
