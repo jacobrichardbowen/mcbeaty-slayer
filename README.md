@@ -19,7 +19,7 @@ mount. The map and the guns are still crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Download the latest build (`TowerOfPower_v012.exe`) and double-click
+You don't need Godot to play. Download the latest build (`TowerOfPower_v013.exe`) and double-click
 it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
@@ -34,7 +34,7 @@ normal double-click.
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-the Windows build into `build/` as `TowerOfPower_v012.exe`. The number comes
+the Windows build into `build/` as `TowerOfPower_v013.exe`. The number comes
 from `config/version` in `project.godot`; bump it for each new build. The Mac
 and Linux presets are still there: `tools/build.sh Windows macOS Linux` builds
 all three.
@@ -69,8 +69,9 @@ card with Vulkan; any card from roughly the last ten years has it. On top of
 what Low shows:
 
 - Light bounces off the snow and walls, and roofs and walls shut out the
-  sky, so the tower, the Command Center and the covered paths are in shade
-  while open ground is lit. Soft lamps under the roofs keep them readable.
+  sky, so the tower, the Command Center and the covered paths fall into
+  deep, sky-blue shade while open ground is lit. Faint lamps in the tower
+  and the Command Center keep someone in a dark corner from vanishing.
 - Soft shading where surfaces meet (ambient occlusion), and shadow edges
   that soften away from what casts them.
 - A faint haze that catches sunlight and lamplight.
@@ -437,5 +438,4 @@ scripts/
   fx/                       particles and tracers
 assets/characters/soldier/  the character and the six clips it uses
 assets/sounds/              the recorded sounds (see tools/prepare_sounds.py)
-assets/shaders/high_sky.gdshader  the sky in High graphics, with a less blue copy for lighting
 ```

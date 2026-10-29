@@ -54,6 +54,9 @@ var indoor_boxes: Array[AABB] = [
 	AABB(Vector3(-32.7, -3.5, -28.5), Vector3(4.4, 3.7, 16.0)),
 	AABB(Vector3(28.3, -3.5, -28.5), Vector3(4.4, 3.7, 16.0)),
 ]
+## The enclosed rooms among them (the tower and the Command Center; the
+## covered paths are open along one side): High graphics hangs faint lamps here.
+var rooms: Array[AABB] = [indoor_boxes[0], indoor_boxes[1]]
 
 var _b: LevelBuilder
 var _spinner: AnimatableBody3D
