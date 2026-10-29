@@ -172,6 +172,34 @@ static var score_limit := 50
 static var player_name := "Player"  # shown to others online
 
 
+## Graphics: High is the Forward+ renderer, Low the Compatibility one. The
+## choice is saved here and read at startup (project_settings_override).
+const GRAPHICS_FILE := "user://graphics.cfg"
+
+
+## What this run uses.
+static func high_graphics() -> bool:
+	return RenderingServer.get_rendering_device() != null
+
+
+## What the next start will use (a command-line flag can differ for one run).
+static func high_graphics_saved() -> bool:
+	return ProjectSettings.get_setting("rendering/renderer/rendering_method") == "forward_plus"
+
+
+## Saves the choice; restarts if this run uses the other renderer, since
+## the renderer can't change while running.
+static func set_high_graphics(high: bool) -> void:
+	var method := "forward_plus" if high else "gl_compatibility"
+	var cfg := ConfigFile.new()
+	cfg.set_value("rendering", "renderer/rendering_method", method)
+	cfg.save(GRAPHICS_FILE)
+	ProjectSettings.set_setting("rendering/renderer/rendering_method", method)
+	if high != high_graphics():
+		OS.set_restart_on_exit(true)
+		(Engine.get_main_loop() as SceneTree).quit()
+
+
 ## Godot's camera angle (vertical) for `fov` across a 16:9 screen. Wider
 ## screens see more at the sides and narrower ones less, at the same height.
 static func vertical_fov() -> float:

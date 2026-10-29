@@ -52,6 +52,8 @@ func start() -> void:
 	level.name = "Ascension"
 	add_child(level)
 	level.build()
+	if GameConfig.high_graphics():
+		_light_indoors()
 	Acoustics.setup(level)
 	fx_root = Node3D.new()
 	fx_root.name = "Fx"
@@ -207,6 +209,71 @@ func _build_environment() -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 150.0
 	add_child(sun)
+	if GameConfig.high_graphics():
+		_high_lighting(env, sun)
+
+
+## Graphics: High (the Forward+ renderer). Light bounces off the snow and
+## walls while roofs and walls shut out the sky, so the tower, the Command
+## Center and the covered paths sit in shade; sunlight scatters in the air.
+func _high_lighting(env: Environment, sun: DirectionalLight3D) -> void:
+	env.sdfgi_enabled = true
+	env.sdfgi_use_occlusion = true
+	env.sdfgi_min_cell_size = 0.25
+	env.sdfgi_bounce_feedback = 0.8
+	env.sdfgi_energy = 3.0
+	env.ssao_intensity = 1.6
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.0015
+	env.volumetric_fog_albedo = Color(0.86, 0.9, 1.0)
+	env.volumetric_fog_sky_affect = 0.1
+	sun.light_angular_distance = 0.4  # shadow edges soften away from what casts them
+	env.sky.sky_material = _high_sky(env.sky.sky_material as ProceduralSkyMaterial)
+	# The bounced light flecks small, close things (your gun) with white
+	# specks; temporal anti-aliasing smooths them out over a few frames.
+	get_viewport().use_taa = true
+	get_tree().node_added.connect(_keep_out_of_gi)
+
+
+## Graphics: High. Only the level shapes the bounced light: soldiers, guns,
+## bodies and effects move, and left in they'd leave stale shapes behind.
+func _keep_out_of_gi(node: Node) -> void:
+	if node is GeometryInstance3D and not (level and level.is_ancestor_of(node)):
+		(node as GeometryInstance3D).gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+
+
+## The same sky drawn by a shader whose lighting copy is less blue (see the shader).
+func _high_sky(procedural: ProceduralSkyMaterial) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://assets/shaders/high_sky.gdshader")
+	m.set_shader_parameter("sky_top_color", procedural.sky_top_color)
+	m.set_shader_parameter("sky_horizon_color", procedural.sky_horizon_color)
+	m.set_shader_parameter("sky_curve", procedural.sky_curve)
+	m.set_shader_parameter("ground_bottom_color", procedural.ground_bottom_color)
+	m.set_shader_parameter("ground_horizon_color", procedural.ground_horizon_color)
+	m.set_shader_parameter("ground_curve", procedural.ground_curve)
+	m.set_shader_parameter("sun_angle_max", deg_to_rad(procedural.sun_angle_max))
+	m.set_shader_parameter("sun_curve", procedural.sun_curve)
+	return m
+
+
+## Graphics: High. Soft lamps under the roofs keep the shaded insides readable.
+func _light_indoors() -> void:
+	for box: AABB in level.indoor_boxes:
+		var along_x := box.size.x > box.size.z
+		var count := maxi(1, roundi(maxf(box.size.x, box.size.z) / 6.0))
+		var floors := maxi(1, roundi(box.size.y / 5.0))
+		for f in floors:
+			for i in count:
+				var t := (i + 0.5) / count
+				var lamp := OmniLight3D.new()
+				lamp.position = box.position + Vector3(box.size.x * (t if along_x else 0.5),
+					box.size.y * (f + 0.85) / floors, box.size.z * (0.5 if along_x else t))
+				lamp.omni_range = 8.0
+				lamp.light_energy = 1.1
+				lamp.light_color = Color(0.82, 0.9, 1.0)
+				lamp.light_volumetric_fog_energy = 0.5
+				level.add_child(lamp)
 
 
 ## role: "player" (played here), "bot" (run here) or "puppet" (run elsewhere).

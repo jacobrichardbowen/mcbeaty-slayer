@@ -17,6 +17,7 @@ var message := ""  # e.g. why the last online game ended
 
 var _grid: GridContainer
 var _name: LineEdit
+var _graphics: OptionButton
 var _offline_row: Control
 var _online_row: Control
 var _lobby: Control
@@ -92,6 +93,12 @@ func _ready() -> void:
 	_row(_grid, "Mouse sensitivity", sensitivity_slider())
 	_row(_grid, "Field of view", value_slider(GameConfig.FOV_MIN, GameConfig.FOV_MAX, 1.0, GameConfig.fov, "%d°",
 		func(v: float) -> void: GameConfig.fov = v))
+	_graphics = OptionButton.new()
+	_graphics.add_item("High: bounce light and haze")
+	_graphics.add_item("Low: for older PCs")
+	_graphics.selected = 0 if GameConfig.high_graphics_saved() else 1
+	_graphics.item_selected.connect(func(i: int) -> void: GameConfig.set_high_graphics(i == 0))
+	_row(_grid, "Graphics (restarts)", _graphics)
 	var inv := CheckBox.new()
 	inv.button_pressed = GameConfig.invert_y
 	inv.toggled.connect(func(on: bool) -> void: GameConfig.invert_y = on)
@@ -202,6 +209,7 @@ func refresh() -> void:
 	_online_row.visible = mode == Net.Mode.OFFLINE
 	_grid.visible = mode != Net.Mode.CLIENT
 	_name.editable = mode == Net.Mode.OFFLINE  # the others already have it
+	_graphics.disabled = mode != Net.Mode.OFFLINE  # restarting would leave the game
 	_deploy_all.visible = net.serving()
 	_code.text = net.code if net.code != "" else ("" if mode == Net.Mode.CLIENT else "...")
 	_code.visible = mode == Net.Mode.HOST

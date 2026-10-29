@@ -19,7 +19,7 @@ mount. The map and the guns are still crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Download the latest build (`TowerOfPower_v011.exe`) and double-click
+You don't need Godot to play. Download the latest build (`TowerOfPower_v012.exe`) and double-click
 it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
@@ -34,7 +34,7 @@ normal double-click.
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-the Windows build into `build/` as `TowerOfPower_v011.exe`. The number comes
+the Windows build into `build/` as `TowerOfPower_v012.exe`. The number comes
 from `config/version` in `project.godot`; bump it for each new build. The Mac
 and Linux presets are still there: `tools/build.sh Windows macOS Linux` builds
 all three.
@@ -59,7 +59,34 @@ runs it, and `godot --path . -- --autostart` skips the lobby.
 - **Field of view**: degrees across a 16:9 screen (default 78°). Halo 2's 70°
   was across an old 4:3 TV; keeping its height of view on a widescreen would
   be 86° across. Wider screens see a little more at the sides.
+- **Graphics**: High or Low (see below). Changing it restarts the game.
 - **Invert look**.
+
+### Graphics: High and Low
+
+**High** (the default) uses Godot's Forward+ renderer, which needs a graphics
+card with Vulkan; any card from roughly the last ten years has it. On top of
+what Low shows:
+
+- Light bounces off the snow and walls, and roofs and walls shut out the
+  sky, so the tower, the Command Center and the covered paths are in shade
+  while open ground is lit. Soft lamps under the roofs keep them readable.
+- Soft shading where surfaces meet (ambient occlusion), and shadow edges
+  that soften away from what casts them.
+- A faint haze that catches sunlight and lamplight.
+
+**Low** uses the Compatibility renderer (OpenGL), as every build up to v011
+did: flat, even light everywhere, for older or weaker PCs.
+
+The choice is saved for the next start. If a PC can't start High at all,
+Windows shows "Your video card drivers seem not to support the required
+Vulkan version". Updating the graphics driver usually fixes that. Otherwise,
+start the game once from a shortcut whose target ends in
+` --rendering-driver opengl3`, then pick Low in the menu, and it starts in Low
+from then on.
+
+The first match on a new PC can hitch briefly as each effect is drawn for
+the first time; Godot keeps what it prepared, so later matches don't.
 
 ### Controls
 
@@ -371,7 +398,10 @@ tests/net_lobby_test.gd
 # script checks that all four agree on every soldier and on the score
 GODOT=godot tools/net_soak.sh
 
-# Screenshots (needs a display; works under xvfb-run)
+# Screenshots (needs a display; works under xvfb-run). High needs Vulkan: on
+# a machine without a graphics card, Mesa's software driver (the Ubuntu
+# package mesa-vulkan-drivers) works, slowly. Add
+# --rendering-method gl_compatibility for Low.
 godot --path . --resolution 1280x720 --fixed-fps 60 -s tests/screenshots.gd -- /tmp/shots
 ```
 
@@ -407,4 +437,5 @@ scripts/
   fx/                       particles and tracers
 assets/characters/soldier/  the character and the six clips it uses
 assets/sounds/              the recorded sounds (see tools/prepare_sounds.py)
+assets/shaders/high_sky.gdshader  the sky in High graphics, with a less blue copy for lighting
 ```
