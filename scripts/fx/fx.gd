@@ -102,11 +102,16 @@ static func tracer(root: Node3D, from: Vector3, to: Vector3, color := Color(1.0,
 	_expire(mi, 0.045)
 
 
+## A muzzle flash: a glare at the muzzle and a burst of warm light on
+## everything around, fading over a few frames so it registers at any frame
+## rate (and through temporal anti-aliasing).
 static func flash(root: Node3D, pos: Vector3, energy := 4.0, size := 0.35) -> void:
 	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.75, 0.4)
-	light.light_energy = energy
-	light.omni_range = 6.0
+	light.light_color = Color(1.0, 0.72, 0.38)
+	light.light_energy = energy * 2.5
+	light.omni_range = 10.0
+	light.light_volumetric_fog_energy = 2.0
+	light.light_bake_mode = Light3D.BAKE_DISABLED  # too brief to feed the bounced light
 	root.add_child(light)
 	light.global_position = pos
 	var mi := MeshInstance3D.new()
@@ -119,7 +124,10 @@ static func flash(root: Node3D, pos: Vector3, energy := 4.0, size := 0.35) -> vo
 	mi.material_override = _unshaded(Color(1.0, 0.85, 0.5))
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	light.add_child(mi)
-	_expire(light, 0.05)
+	var fade := light.create_tween()
+	fade.tween_property(light, "light_energy", 0.0, 0.1).set_ease(Tween.EASE_IN)
+	fade.parallel().tween_callback(mi.hide).set_delay(0.05)
+	_expire(light, 0.1)
 
 
 static func ring_burst(root: Node3D, pos: Vector3, color: Color) -> void:

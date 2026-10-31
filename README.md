@@ -19,7 +19,7 @@ mount. The map and the guns are still crude primitives.
 
 ## Playing it
 
-You don't need Godot to play. Download the latest build (`TowerOfPower_v013.exe`) and double-click
+You don't need Godot to play. Download the latest build (`TowerOfPower_v014.exe`) and double-click
 it. The whole game is packed inside that one file, and nothing gets installed.
 
 The game opens fullscreen on the lobby. Press **Enter** (or click **Deploy**)
@@ -34,7 +34,7 @@ normal double-click.
 ### Making new builds
 
 With Godot 4.3 and its export templates installed, `tools/build.sh` exports
-the Windows build into `build/` as `TowerOfPower_v013.exe`. The number comes
+the Windows build into `build/` as `TowerOfPower_v014.exe`. The number comes
 from `config/version` in `project.godot`; bump it for each new build. The Mac
 and Linux presets are still there: `tools/build.sh Windows macOS Linux` builds
 all three.
@@ -75,6 +75,9 @@ what Low shows:
 - Soft shading where surfaces meet (ambient occlusion), and shadow edges
   that soften away from what casts them.
 - A faint haze that catches sunlight and lamplight.
+
+In both, every shot's muzzle flash throws a burst of warm light on its
+surroundings for a tenth of a second; it shows best in the shade.
 
 **Low** uses the Compatibility renderer (OpenGL), as every build up to v011
 did: flat, even light everywhere, for older or weaker PCs.
@@ -310,48 +313,77 @@ The world shapes what you hear, in the spirit of Peak and Big Walk
 
 ## The soldier character
 
-The soldiers are `Soldier_White_A_v008_JBO.fbx`, rigged with Mixamo's
-skeleton, in [`assets/characters/soldier/`](assets/characters/soldier/). Godot
-imports the FBX files directly. From the Mixamo Shooter Pack the game uses six
-clips, in `anims/` there:
+The soldier, his animations, his first-person arms and both guns live in one
+Blender file, [`art/TowerOfPower_Soldier.blend`](art/) (made with Blender
+5.2; open it in 5.2 or newer). The game loads them from two files exported from it,
+`assets/characters/soldier/soldier.glb` and `assets/weapons/guns.glb`.
 
-| Clip | Used for |
-|---|---|
-| rifle aiming idle | standing, and the upper body at all times so the gun stays up |
-| rifle run | running forwards |
-| run backwards | backpedalling |
-| strafe left / strafe right | sidestepping (renamed from `strafe (2)` and `strafe`) |
-| jump forward | one frame, the top of the leap, held while airborne |
+### Working on the .blend
+
+Open it, change what you like, save, and upload it back to the same place
+(`art/TowerOfPower_Soldier.blend` on this branch). Then ask for it to be
+brought into the game: `tools/blend/export_blend.py` turns it into the two
+game files, and the next build carries your changes.
+
+What's in it, and what the game expects:
+
+| In the .blend | What it is | Keep |
+|---|---|---|
+| `Soldier_Rig` | Mixamo's skeleton, in metres, facing -Y | the bone names (`mixamorig:...`) |
+| `Soldier` | the body, skinned to the rig | the material name `White Wool` (the Reds' dye finds it) |
+| `FP_Arms` (hidden collection) | the sleeves and gloves you see in first person | delete it and the export cuts it from the body again |
+| actions `idle`, `run`, `back`, `strafe_l`, `strafe_r`, `jump` | the animations | the names |
+| `Shotgun_3P`, `Rifle_3P` | the guns in soldiers' hands | the names, and the markers inside |
+| `Shotgun_FP`, `Rifle_FP` | the guns in first person | the names, the markers, `Pump` and `Bolt` |
+
+- **Animations**: key them on `Soldier_Rig` as usual. The actions are the
+  Mixamo clips the game used before, with exactly the poses it played. The
+  game still makes the run, backpedal and strafes loop in place at one shared
+  length (0.7 s, starting as the left foot lands), so their own length and
+  forward travel don't matter; the idle is held on the upper body at all
+  times so the gun stays up; and only one frame of `jump` (0.3 s in) is used,
+  held while airborne.
+- **Textures and materials**: any Principled BSDF setup that glTF can carry
+  (colour, roughness, metallic, normal and other image textures). Images
+  come across inside the export.
+- **Guns**: each gun is an empty with its parts under it. Where the gun
+  empty sits in the scene doesn't matter; its parts and markers relative to
+  it do. The markers (small spheres) are `Muzzle` (where shots and the flash
+  come from), `Hand_R` (where the right hand grips) and `Hand_L` (the left
+  hand: on the pump, or on the rifle's fore-stock). In first person the
+  `Pump` slides and the `Bolt` turns after each shot, so their parts must stay
+  under them. Blender adds `.001` and the like to repeated names; that's
+  fine. The game draws the first-person guns at a quarter of their size in
+  the .blend, close to the camera, so they are bigger there than the
+  third-person ones.
+
+Exporting needs Blender: either a normal install (`blender -b
+art/TowerOfPower_Soldier.blend --python tools/blend/export_blend.py`) or
+Blender as a Python module (`pip install bpy==5.2.3` on Python 3.13, then
+`python tools/blend/export_blend.py art/TowerOfPower_Soldier.blend`).
+`tools/blend/build_blend.py` is how the .blend was first made from the
+Mixamo files (still in `Mixamo_Shooter_Pack v02.zip`).
+
+### In the game
 
 At load the clips are made to run in place, loop cleanly and share one cycle
 length and starting foot, so they blend by direction. Playback speeds up to
 match how fast the soldier is moving. After the clips play, the spine turns
 so the gun (placed between the hands) points exactly where the soldier aims.
-The pack has no crouch clips, so crouching lowers the hips and bends the knees
-to keep the feet where the clip put them. Mixamo crouch clips would look
-better if you want to add them later. The same leg bending tames the run's
-bounce, sped up as it is: only a third of the hips' up-and-down travel is kept
-(14 cm of head bob down to 6). After the clips play, only bone rotations are
-ever changed, so nothing can build up and stretch the mesh.
+There are no crouch clips, so crouching lowers the hips and bends the knees
+to keep the feet where the clip put them. The same leg bending tames the
+run's bounce, sped up as it is: only a third of the hips' up-and-down travel
+is kept (14 cm of head bob down to 6). After the clips play, only bone
+rotations are ever changed, so nothing can build up and stretch the mesh.
 
-In first person you see the character's own sleeves and gloves. They are cut
-from its mesh by which bones they follow, posed from the aiming idle so the
-fingers curl round the grip. Each frame the right hand is put on the gun's grip
-and the left arm reaches for the pump or fore-stock, so the hands follow every
-pump, kick, reload and swing.
+In first person you see `FP_Arms`, posed from the aiming idle so the fingers
+curl round the grip. Each frame the right hand is put on the gun's `Hand_R`
+and the left arm reaches for `Hand_L`, so the hands follow every pump, kick,
+reload and swing.
 
 On death, a copy of the character takes the soldier's last pose. Ten capsules
 (torso, head, upper arms, forearms, thighs, shins) then move its bones. Knees
 and elbows are hinges, so they only bend the natural way.
-
-To update the character, only the character itself is needed, not the
-clips. Rig the new version in Mixamo (or keep the existing rig while editing
-it in a 3D program), put the FBX in `assets/characters/soldier/` and point
-`CHARACTER` in `scripts/actors/soldier_anims.gd` at it. The clips were
-downloaded for v005 and are joint rotations, which carry over to any Mixamo
-rig; the hips' movement is scaled to the new character's legs. On v008 they
-land within a centimetre or two of the clips Mixamo makes for v008 itself.
-The Reds' dye looks for a material whose name starts with `White Wool`.
 
 ## Bots
 
@@ -431,11 +463,15 @@ scripts/
   weapons/shotgun.gd        pellets, falloff, shell reload
   weapons/rifle.gd          semi-auto Mosin: bloom, headshots, clip reload, zoom
   weapons/maxim_turret.gd   the Tower of Power
+  weapons/gun_models.gd     the guns' looks and markers, from the .blend
   ui/hud.gd                 Halo 2-style HUD, tracker, kill feed
   fx/ragdoll.gd             limp bodies thrown by the killing shot, on the character's skeleton
   fx/acoustics.gd           occlusion, echo and rooms: how the world shapes sound
   fx/sfx.gd                 recorded and synthesized sounds, random takes, master limiter
   fx/                       particles and tracers
-assets/characters/soldier/  the character and the six clips it uses
+assets/characters/soldier/  soldier.glb: the character, arms and clips (exported from the .blend)
+assets/weapons/             guns.glb: the four guns (exported from the .blend)
+art/                        TowerOfPower_Soldier.blend, the source of both (Godot ignores this folder)
+tools/blend/                build_blend.py (made the .blend), export_blend.py (.blend -> game files)
 assets/sounds/              the recorded sounds (see tools/prepare_sounds.py)
 ```

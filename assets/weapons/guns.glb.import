@@ -1,15 +1,15 @@
 [remap]
 
-importer="animation_library"
+importer="scene"
 importer_version=1
-type="AnimationLibrary"
-uid="uid://4xy84nbasau7"
-path="res://.godot/imported/strafe right.fbx-7672d48059b408011651cd9b584aa31f.res"
+type="PackedScene"
+uid="uid://btwp8mkkit4bp"
+path="res://.godot/imported/guns.glb-4471dc5903b83d7b04bd1facfed35a9c.scn"
 
 [deps]
 
-source_file="res://assets/characters/soldier/anims/strafe right.fbx"
-dest_files=["res://.godot/imported/strafe right.fbx-7672d48059b408011651cd9b584aa31f.res"]
+source_file="res://assets/weapons/guns.glb"
+dest_files=["res://.godot/imported/guns.glb-4471dc5903b83d7b04bd1facfed35a9c.scn"]
 
 [params]
 
@@ -27,11 +27,10 @@ meshes/force_disable_compression=false
 skins/use_named_skins=true
 animation/import=true
 animation/fps=30
-animation/trimming=true
+animation/trimming=false
 animation/remove_immutable_tracks=true
 animation/import_rest_as_RESET=false
 import_script/path=""
 _subresources={}
-fbx/importer=0
-fbx/allow_geometry_helper_nodes=false
-fbx/embedded_image_handling=1
+gltf/naming_version=1
+gltf/embedded_image_handling=1

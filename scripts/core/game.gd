@@ -221,7 +221,7 @@ func _high_lighting(env: Environment, sun: DirectionalLight3D) -> void:
 	env.sdfgi_enabled = true
 	env.sdfgi_use_occlusion = true
 	env.sdfgi_min_cell_size = 0.25
-	env.sdfgi_energy = 1.15  # a touch over 1, so nobody vanishes in the darkest corners
+	env.sdfgi_energy = 0.7
 	env.ssil_enabled = true
 	env.volumetric_fog_enabled = true
 	env.volumetric_fog_density = 0.003
@@ -261,7 +261,7 @@ func _light_indoors() -> void:
 				lamp.position = box.position + Vector3(box.size.x * (t if along_x else 0.5),
 					box.size.y * (f + 0.6) / floors, box.size.z * (0.5 if along_x else t))
 				lamp.omni_range = 8.0
-				lamp.light_energy = 0.35
+				lamp.light_energy = 0.25
 				lamp.light_color = Color(0.82, 0.9, 1.0)
 				lamp.light_volumetric_fog_energy = 0.5
 				level.add_child(lamp)

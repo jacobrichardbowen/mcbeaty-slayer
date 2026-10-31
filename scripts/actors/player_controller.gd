@@ -6,12 +6,6 @@ extends Node3D
 ## weapon choice made while waiting to respawn.
 
 const VM_TOE_IN := 0.07
-const PUMP_REST_Z := -0.36
-# Where the hands hold each viewmodel gun (gun or pump local space).
-const SG_GRIP := Vector3(0.0, -0.075, 0.12)
-const SG_PUMP_GRIP := Vector3(-0.01, -0.055, 0.0)
-const RF_GRIP := Vector3(0.0, -0.07, 0.22)
-const RF_FORE_GRIP := Vector3(-0.01, -0.07, -0.42)
 const LOADOUTS := ["shotgun", "rifle"]
 
 var soldier: Soldier
@@ -27,8 +21,9 @@ var _arms: ViewmodelArms
 var _vm_gun: Node3D  # the gun in hand
 var _vm_muzzle: Node3D
 var _vm_rest := Vector3.ZERO
-var _vm_guns := {}  # kind -> [node, muzzle, rest position]
+var _vm_guns := {}  # kind -> [node, muzzle, rest position, right grip, left hand's part, left grip]
 var _vm_pump: Node3D
+var _vm_pump_rest := 0.0
 var _vm_bolt: Node3D
 var _zoom_blend := 0.0
 var _recoil := 0.0
@@ -291,82 +286,31 @@ func _process(delta: float) -> void:
 
 # --- Viewmodel ------------------------------------------------------------------------
 
-func _vm_part(parent: Node3D, mesh: Mesh, color: Color, pos: Vector3, rot := Vector3.ZERO) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	m.roughness = 0.6
-	m.metallic = 0.3 if color.get_luminance() < 0.2 else 0.0
-	mi.material_override = m
-	mi.position = pos
-	mi.rotation = rot
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(mi)
-	return mi
-
-
-func _vm_box(size: Vector3) -> BoxMesh:
-	var b := BoxMesh.new()
-	b.size = size
-	return b
-
-
-func _vm_cyl(r: float, h: float) -> CylinderMesh:
-	var c := CylinderMesh.new()
-	c.top_radius = r
-	c.bottom_radius = r
-	c.height = h
-	c.radial_segments = 12
-	c.rings = 1
-	return c
-
-
 func _build_viewmodel() -> void:
-	var steel := Color(0.13, 0.13, 0.14)
-	var wood := Color(0.45, 0.28, 0.14)
 	_vm = Node3D.new()
 	_vm.scale = Vector3.ONE * 0.25
 	camera.add_child(_vm)
 	_arms = ViewmodelArms.new()
 	_arms.team = soldier.team
 	_vm.add_child(_arms)
-
-	var sg := _vm_new_gun("shotgun", Vector3(0.34, -0.31, -0.86), Vector3(0, 0.026, -0.8))
-	_vm_part(sg, _vm_box(Vector3(0.06, 0.085, 0.3)), steel, Vector3.ZERO)
-	_vm_part(sg, _vm_cyl(0.021, 0.62), steel, Vector3(0, 0.026, -0.46), Vector3(PI / 2, 0, 0))
-	_vm_part(sg, _vm_cyl(0.018, 0.5), steel, Vector3(0, -0.02, -0.41), Vector3(PI / 2, 0, 0))
-	_vm_part(sg, _vm_box(Vector3(0.006, 0.02, 0.012)), Color(0.8, 0.8, 0.8), Vector3(0, 0.05, -0.75))
-	_vm_part(sg, _vm_box(Vector3(0.062, 0.115, 0.34)), wood, Vector3(0, -0.05, 0.31), Vector3(-0.18, 0, 0))
-	_vm_pump = Node3D.new()
-	_vm_pump.position = Vector3(0, -0.024, PUMP_REST_Z)
-	sg.add_child(_vm_pump)
-	_vm_part(_vm_pump, _vm_box(Vector3(0.072, 0.066, 0.18)), wood, Vector3.ZERO)
-
-	# Mosin: long stock running back past the hand, thin barrel, bolt on the right.
-	var rf := _vm_new_gun("rifle", Vector3(0.3, -0.3, -0.8), Vector3(0, 0.03, -1.1))
-	_vm_part(rf, _vm_box(Vector3(0.055, 0.075, 1.15)), wood, Vector3(0, -0.02, -0.12))
-	_vm_part(rf, _vm_box(Vector3(0.05, 0.11, 0.3)), wood, Vector3(0, -0.06, 0.38), Vector3(-0.12, 0, 0))
-	_vm_part(rf, _vm_cyl(0.016, 0.42), steel, Vector3(0, 0.03, -0.86), Vector3(PI / 2, 0, 0))
-	_vm_part(rf, _vm_box(Vector3(0.045, 0.05, 0.24)), steel, Vector3(0, 0.035, 0.05))
-	_vm_part(rf, _vm_box(Vector3(0.006, 0.025, 0.012)), Color(0.8, 0.8, 0.8), Vector3(0, 0.06, -1.04))
-	_vm_bolt = Node3D.new()
-	_vm_bolt.position = Vector3(0.03, 0.035, 0.12)
-	rf.add_child(_vm_bolt)
-	_vm_part(_vm_bolt, _vm_cyl(0.01, 0.08), steel, Vector3(0.04, 0, 0), Vector3(0, 0, PI / 2))
-	_vm_part(_vm_bolt, _vm_box(Vector3(0.025, 0.025, 0.025)), steel, Vector3(0.085, 0, 0))
+	var sg := _vm_new_gun("shotgun", "Shotgun_FP", Vector3(0.34, -0.31, -0.86))
+	_vm_pump = GunModels.part(sg, "Pump")
+	_vm_pump_rest = _vm_pump.position.z
+	_vm_guns["shotgun"] += [_vm_pump, GunModels.part(_vm_pump, "Hand_L").position]
+	var rf := _vm_new_gun("rifle", "Rifle_FP", Vector3(0.3, -0.3, -0.8))
+	_vm_bolt = GunModels.part(rf, "Bolt")
+	_vm_guns["rifle"] += [rf, GunModels.part(rf, "Hand_L").position]
 	_select_viewmodel(soldier.weapon.kind)
 
 
-func _vm_new_gun(kind: String, rest: Vector3, muzzle: Vector3) -> Node3D:
-	var gun := Node3D.new()
+func _vm_new_gun(kind: String, model: String, rest: Vector3) -> Node3D:
+	var gun := GunModels.make(model)
 	gun.position = rest
 	gun.rotation.y = VM_TOE_IN
 	_vm.add_child(gun)
-	var m := Node3D.new()
-	m.position = muzzle
-	gun.add_child(m)
-	_vm_guns[kind] = [gun, m, rest]
+	for mi: MeshInstance3D in gun.find_children("*", "MeshInstance3D", true, false):
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_vm_guns[kind] = [gun, GunModels.part(gun, "Muzzle"), rest, GunModels.part(gun, "Hand_R").position]
 	return gun
 
 
@@ -406,7 +350,7 @@ func _update_viewmodel(delta: float) -> void:
 		var t := (s.now() - w.last_shot_time) / w.fire_interval()
 		if t > 0.3 and t < 0.75:
 			cycle = sin((t - 0.3) / 0.45 * PI)
-	_vm_pump.position.z = PUMP_REST_Z + (cycle * 0.11 if w.kind == "shotgun" else 0.0)
+	_vm_pump.position.z = _vm_pump_rest + (cycle * 0.11 if w.kind == "shotgun" else 0.0)
 	_vm_bolt.rotation.z = cycle * 1.1 if w.kind == "rifle" else 0.0
 	_reload_blend = move_toward(_reload_blend, 1.0 if w.is_reloading() else 0.0, delta * 6.0)
 	rot.z += _reload_blend * 0.5
@@ -425,10 +369,8 @@ func _update_viewmodel(delta: float) -> void:
 	_vm_gun.position = pos
 	_vm_gun.rotation = rot
 	if _vm.visible:
-		if w.kind == "shotgun":
-			_arms.hold(_vm_gun, SG_GRIP, _vm_pump, SG_PUMP_GRIP)
-		else:
-			_arms.hold(_vm_gun, RF_GRIP, _vm_gun, RF_FORE_GRIP)
+		var g: Array = _vm_guns[w.kind]
+		_arms.hold(_vm_gun, g[3], g[4], g[5])
 
 
 # --- Callbacks from Soldier -------------------------------------------------------------

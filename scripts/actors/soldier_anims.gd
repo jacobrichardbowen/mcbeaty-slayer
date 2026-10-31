@@ -1,31 +1,27 @@
 class_name SoldierAnims
 extends RefCounted
-## Turns the Mixamo clips into game-ready loops, once per run. Mixamo moves
-## the hips across the floor, starts each cycle on a different foot and gives
-## every clip its own length. Here each loop runs in place, starts as the left
-## foot lands and lasts CYCLE seconds, so the run and strafes blend cleanly.
-## The airborne pose is one frame of the jump.
+## Turns the character's clips into game-ready loops, once per run. The clips
+## are the actions in art/TowerOfPower_Soldier.blend (exported with
+## tools/blend/export_blend.py): Mixamo clips that move the hips across the
+## floor, start each cycle on a different foot and each have their own
+## length. Here each loop runs in place, starts as the left foot lands and
+## lasts CYCLE seconds, so the run and strafes blend cleanly. The airborne
+## pose is one frame of the jump.
 
 const DIR := "res://assets/characters/soldier/"
-const CHARACTER := DIR + "Soldier_White_A_v008_JBO.fbx"
-## The clips were downloaded from Mixamo for an earlier version of the
-## character (v005), whose hips stood this high in its own units. A new
-## version only needs its own Mixamo rig: a clip is joint rotations, which
-## carry over as they are, plus the hips' movement, scaled here to the new
-## legs so the feet stay on the ground.
-const CLIP_HIPS_HEIGHT := 1.2997
+const CHARACTER := DIR + "soldier.glb"
 const FPS := 30.0
 const CYCLE := 0.7  # seconds per gait cycle (two steps)
 const HIPS := "Skeleton3D:mixamorig_Hips"
-# name -> [file, loops in step with the feet]
+# loop name -> [action in the .blend, loops in step with the feet]
 const CLIPS := {
-	"idle": ["rifle aiming idle", false],
-	"run": ["rifle run", true],
-	"back": ["run backwards", true],
-	"strafe_l": ["strafe left", true],
-	"strafe_r": ["strafe right", true],
+	"idle": ["idle", false],
+	"run": ["run", true],
+	"back": ["back", true],
+	"strafe_l": ["strafe_l", true],
+	"strafe_r": ["strafe_r", true],
 }
-const AIR_CLIP := "jump forward"
+const AIR_CLIP := "jump"
 const AIR_TIME := 0.3  # the top of the leap
 const AIR_DROP := 0.08  # tuck the hips a little in the air
 
@@ -34,7 +30,7 @@ const AIR_DROP := 0.08  # tuck the hips a little in the air
 static var stride := {}
 static var _library: AnimationLibrary
 static var _rest := {}  # bone -> rest transform, from the character
-static var _hip_scale := 1.0  # the character's hips height over the clips'
+static var _actions: AnimationPlayer
 
 
 static func library() -> AnimationLibrary:
@@ -50,23 +46,22 @@ static func library() -> AnimationLibrary:
 	return _library
 
 
-static func _clip(file: String) -> Animation:
-	var lib := load(DIR + "anims/" + file + ".fbx") as AnimationLibrary
-	return lib.get_animation(lib.get_animation_list()[0])
+## An action from the .blend, its tracks aimed at "Skeleton3D:<bone>".
+static func _clip(action: String) -> Animation:
+	var a := _actions.get_animation(action).duplicate() as Animation
+	for t in a.get_track_count():
+		a.track_set_path(t, NodePath("Skeleton3D:" + str(a.track_get_path(t)).get_slice(":", 1)))
+	return a
 
 
 static func _read_rest() -> void:
 	var scene := (load(CHARACTER) as PackedScene).instantiate()
-	var sk := scene.get_node("Skeleton3D") as Skeleton3D
+	var sk := scene.find_child("Skeleton3D") as Skeleton3D
 	for b in sk.get_bone_count():
 		_rest[sk.get_bone_name(b)] = sk.get_bone_rest(b)
-	_hip_scale = (_rest["mixamorig_Hips"] as Transform3D).origin.y / CLIP_HIPS_HEIGHT
+	_actions = scene.find_child("AnimationPlayer") as AnimationPlayer
+	_actions.get_parent().remove_child(_actions)
 	scene.free()
-
-
-## Where a clip puts the hips at `t`, fitted to the character's legs.
-static func _hips_at(src: Animation, track: int, t: float) -> Vector3:
-	return src.position_track_interpolate(track, t) * _hip_scale
 
 
 ## Resamples a clip into an in-place loop. Gait loops are shifted to start as
@@ -74,8 +69,8 @@ static func _hips_at(src: Animation, track: int, t: float) -> Vector3:
 static func _make_loop(src: Animation, gait: bool, name: String) -> Animation:
 	var length := src.length
 	var hips := src.find_track(HIPS, Animation.TYPE_POSITION_3D)
-	var p0 := _hips_at(src, hips, 0.0)
-	var drift := _hips_at(src, hips, length) - p0
+	var p0 := src.position_track_interpolate(hips, 0.0)
+	var drift := src.position_track_interpolate(hips, length) - p0
 	drift.y = 0.0
 	stride[name] = drift.length()
 	var start := _left_foot_down(src) if gait else 0.0
@@ -86,7 +81,7 @@ static func _make_loop(src: Animation, gait: bool, name: String) -> Animation:
 	var centre := Vector3.ZERO
 	for i in n:
 		var t := fmod(start + length * i / n, length)
-		var p := _hips_at(src, hips, t) - drift * (t / length)
+		var p := src.position_track_interpolate(hips, t) - drift * (t / length)
 		hips_keys.append(p)
 		centre += Vector3(p.x, 0, p.z) / n
 	var anim := Animation.new()
@@ -147,7 +142,7 @@ static func _left_foot_down(src: Animation) -> float:
 			var pt := src.find_track("Skeleton3D:" + bone, Animation.TYPE_POSITION_3D)
 			var rt := src.find_track("Skeleton3D:" + bone, Animation.TYPE_ROTATION_3D)
 			if pt >= 0:
-				pos = _hips_at(src, pt, t) if bone == "mixamorig_Hips" else src.position_track_interpolate(pt, t)
+				pos = src.position_track_interpolate(pt, t)
 			if rt >= 0:
 				rot = src.rotation_track_interpolate(rt, t)
 			xf = xf * Transform3D(Basis(rot), pos)
